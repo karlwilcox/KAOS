@@ -98,17 +98,22 @@
 +--------+                     |                            |
 | 005    |                     |                            |
 +--------+---------------------+----------------------------+
-| 006    | Device action       |                            |
+| 006    | Default action      |                            |
 +--------+---------------------+----------------------------+
 | 007    | Device value        |                            |
 +--------+---------------------+----------------------------+
-| 008    | Device pin          | Populate with WEP          |
+| 008    | Device pin (*)      | Populate with WEP          |
 +--------+---------------------+----------------------------+
 | 009    | Unused              |                            |
 | to     |                     |                            |
 | 015    |                     |                            |
 +--------+---------------------+----------------------------+
+(*) Special values (virtual pins) are as follows:
+100 - 147: pins 0 to 47 of the first multiplexor
+150 - 197: pins 0 to 47 of the second multiplexor
+?? 200 - 247: pins 0 to 47 of the third multiplexor?
 
+And there are separate multiplexors for plain and PWM LEDs
 */
 
 
@@ -124,20 +129,22 @@
 #define LEDSFT 6        // Soft white
 #define LEDORG 7        // orange ?
 // LED Action values
-#define DEVICE_BLNKA 2     // Blink on phase A
-#define DEVICE_BLNKB 3     // Blink on phase B
-#define DEVICE_FLSH1 4     // Flash 1s
-#define DEVICE_FLSH2 5     // Flash 0.5s
-#define RND2S 6     // Random 20% duty cycle short time (10s)
-#define RND5S 7     // Random 50% duty cycle short time
-#define RND8S 8    // Random 80% duty cycle short time
-#define RND2M 9     // Random 20% duty cycle medium time (60s)
-#define RND5M 10    // Random 50% duty cycle medium time
-#define RND8M 11    // Random 80% duty cycle medium time
-#define RND2L 12    // Random 20% duty cycle medium time (180s)
-#define RND5L 13    // Random 50% duty cycle medium time
-#define RND8L 14    // Random 80% duty cycle medium time
-// values 15-19 not used
+#define ACTION_BLNKA 2     // Blink on phase A
+#define ACTION_BLNKB 3     // Blink on phase B
+#define ACTION_FLSH1 4     // Flash 1s
+#define ACTION_FLSH2 5     // Flash 0.5s
+#define ACTION_FLSH3 6     // 0.5s on, 1s off
+// values 7-9 not used
+#define RND2S 10     // Random 20% duty cycle short time (10s)
+#define RND5S 11     // Random 50% duty cycle short time
+#define RND8S 12    // Random 80% duty cycle short time
+#define RND2M 13     // Random 20% duty cycle medium time (60s)
+#define RND5M 14    // Random 50% duty cycle medium time
+#define RND8M 15    // Random 80% duty cycle medium time
+#define RND2L 16    // Random 20% duty cycle medium time (180s)
+#define RND5L 17    // Random 50% duty cycle medium time
+#define RND8L 18    // Random 80% duty cycle medium time
+// value 19 not used
 #define FLCK1 20    // Flicker fast (<1s cycle time)
 #define FLCK2 21    // Flicker medium (2s cycle time)
 #define FLCK3 22    // Flicker long (5s cycle time)
@@ -213,21 +220,59 @@
 #define LCDEN 66
 // values 67 - 69 not used
 
+
+////////////////////////////////// INPUT Devices ///////////////////////////
+/* Layout of generic input block
+
++--------+---------------------+----------------------------+
+| Offset | Content             | Notes                      |
++--------+---------------------+----------------------------+
+| 000    | Device type         |                            |
++--------+---------------------+----------------------------+
+| 001    | Device subtype      |                            |
++--------+---------------------+----------------------------+
+| 002    | Device tag          |                            |
++--------+                     |                            |
+| 003    |                     |                            |
++--------+                     |                            |
+| 004    |                     |                            |
++--------+                     |                            |
+| 005    |                     |                            |
++--------+---------------------+----------------------------+
+| 006    | Default action      |                            |
++--------+---------------------+----------------------------+
+| 007    | Device value        |                            |
++--------+---------------------+----------------------------+
+| 008    | Device pin (*)      | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 009    | Unused              |                            |
+| to     |                     |                            |
+| 015    |                     |                            |
++--------+---------------------+----------------------------+
+(*) Special values (virtual pins) are as follows:
+100 - 147: pins 0 to 47 of the first multiplexor
+150 - 197: pins 0 to 47 of the second multiplexor
+?? 200 - 247: pins 0 to 47 of the third multiplexor?
+
+And there are separate multiplexors for plain and PWM LEDs
+*/
+
 // inputs
-#define TMPHMD  70      // Temperature and humidity sensor
-#define BUTTON  71      // Momentary button
-#define SWITCH  72      // on/off switch
-#define GENPOT  73      // Generic potentiometer
-#define IRRECV  74      // IR Receiver
-#define RTC     75      // Real-time clock
-#define SDCARD  76      // SD card
+#define DEVICE_TMPHMD  70      // Temperature and humidity sensor - uses default layout
+#define DEVICE_BUTTON  71      // Momentary button
+#define DEVICE_SWITCH  72      // on/off switch
+#define DEVICE_GENPOT  73      // Generic potentiometer
+#define DEVICE_IRRECV  74      // IR Receiver
+#define DEVICE_RTC     75      // Real-time clock
+#define DEVICE_SDCARD  76      // SD card
 
 
 // Input actions
-#define SMP01 100   // sample every 100ms
-#define SMP05 101   // sample every 500ms
-#define SMP10 102   // sample every 1s
-#define SMP20 103   // sample every 2s
-#define SMP50 104   // sample every 5s
+#define SMP100MS 100   // sample every 100ms
+#define SMP500MS 101   // sample every 500ms
+#define SMP1S 102   // sample every 1s
+#define SMP2S 103   // sample every 2s
+#define SMP5S 104   // sample every 5s
+#define SMP10S 105   // sample every 10 seconds
 #define SMP1M 105   // sample every 1 minute
 

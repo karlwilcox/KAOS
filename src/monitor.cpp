@@ -17,6 +17,7 @@ extern char monitorBuffer[];
 extern int hours, minutes, seconds, temperature, humidity;
 extern char com[], arg[], val[];
 extern unsigned int flags;
+extern byte deviceActions[];
 
 unsigned int str2pin(char t, char d1, char d2) {
     const unsigned int aPinValues[] = {
@@ -42,7 +43,39 @@ unsigned int str2pin(char t, char d1, char d2) {
 
 void(* reset) (void) = 0;
 
+/*
+    Notes - Operating Modes
+    =======================
+
+KAOS can operate in 3 modes:
+
+Fully automatic: actions for each device are read from the EEPROM and executed automatically
+once the device is powered on.
+
+Semi-automatic: As above, but a remote device can change the actions for each device (e.g.
+from DEVICE_OFF to DEVICE_BLNKA) and the newly selected action will be executed automatically.
+If required, the original (default) action can be read from the EEPROM and restored. An example
+remote command could be:
+SET LD99 vvv
+where vvv is one of the device action values listed in eeprom_layout.h
+
+Fully remote: A remote device can suspend all automatic processing and operate all devices
+with remote commands. It is also possible to turn off automatic processing for inputs and
+outputs separetely. The command sequence to take over outputs for example would be:
+get FLAG
+(clear bit FLAG_AUTO_OUTPUTS, put into vvv)
+set FLAG vvv
+(on/off device commands as required)
+SET tttt vvv
+SET tttt www
+... ...   ...
+(restore flag to original value)
+set FLAG vvv
+
+*/
+
 void monitorRun() {
+    const static char f_03d[] = "%03u";
     enum cmds { 
     // NOTE: command formats must be used EXACTLY as shown
     // commands marked with asterisks have not been implemented yet
@@ -57,11 +90,14 @@ void monitorRun() {
     CMD_WET,    // WET.aaaa.tttt - write tag tttt to EEPROM starting at address aaaa
     CMD_RET,    // RET.aaaa - read EEPROM tag starting from address aaaa
     CMD_SET,    // SET.tttt.vvv - set device with tag tttt to value vvv (see below)
-    CMD_GET,    // GET.tttt.vvv - get something from device with tag ttt (see belowsay)
+    CMD_GET,    // GET.tttt.vvv - get something from device with tag ttt (see below)
+                // (possibly vvv will be used to get sub-information at some point)
     CMD_DMP,    // DMP.aaaa dump 64 bytes starting at address aaaa (Serial monitor only)
     CMD_WEP,    // WEP.aaaa.ppp - write value of pin ppp to EEPROM address aaaa
+    CMD_ACT,    // ACT.tttt.vvv - Set current action for device tttt to vvv (255 to turn off)
+                // ACT.tttt - Return current action for device with tag tttt
     };
-    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEP";
+    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACT";
     enum tags { // Note these are effectively RESERVED tag names and should NOT be used
                 // for LEDs or other devices. Values are read/write unless shown otherwise
     TAG_NONE,   // No built in value
@@ -72,14 +108,23 @@ void monitorRun() {
     TAG_ALLL,   // Refers to all LEDs (write only)
     TAG_ALLD,   // Refers to all devices (write only)
     TAG_TMPT,   // temperature value
-    TAG_HMDT,   // Humidty
+    TAG_HMDT,   // Humidity
+    TAG_ACTS,   // Dump shadow actions (read only)
     // TAG_BORD,   // Board identity (read only)
     };
-    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDT";
+    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDTACTS";
     enum cmds cmdVal = CMD_BAD;
     enum tags tagVal = TAG_NONE;
-    char temp[5], c;
+    char temp[6], c;
     unsigned int addr;
+    int block;
+
+    // Ignore lines starting with a space or a #
+    // to allow for comments in scripts
+    if (monitorBuffer[0] == ' ' || monitorBuffer[0] == '#') {
+        monitorBuffer[0] = '\0';
+        return;
+    }
 
     // Copy data out of buffer into component parts
     strncpy(com, monitorBuffer,3);
@@ -110,7 +155,7 @@ void monitorRun() {
             strcpy_P(monitorBuffer, badCmd);
             break;
         case CMD_WHO:
-            sprintf(monitorBuffer,"%03u",EEPROM.read(UNITID));
+            sprintf(monitorBuffer,f_03d,EEPROM.read(UNITID));
             monitorBuffer[3] = ' ';
             monitorBuffer[4] = ' ';
             monitorBuffer[5] = EEPROM.read(UNITTYPE);
@@ -151,10 +196,10 @@ void monitorRun() {
                     default:
                         break;
                 }
-            } else if ((addr = findDevice(arg)) == 0) {
-                    strcpy_P(monitorBuffer,badTag);
+            } else if ((block = findDevice(arg)) == 0) {
+                strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                setDevice(addr);
+                setDevice(block);
             }
             break;
         case CMD_GET:
@@ -167,36 +212,68 @@ void monitorRun() {
                         strcpy_P(monitorBuffer,badTag);
                         break;
                     case TAG_FLAG:
-                        sprintf(monitorBuffer,"%d",flags);
+                        sprintf(monitorBuffer,f_03d,flags);
                         break;
                     case TAG_HOUR:
-                        sprintf(monitorBuffer,"%d",hours;
+                        sprintf(monitorBuffer,f_03d,hours);
                         break;
                     case TAG_MINS:
-                        sprintf(monitorBuffer,"%d",minutes);
+                        sprintf(monitorBuffer,f_03d,minutes);
                         break;
                     case TAG_TMPT:
-                        sprintf(monitorBuffer,"%d",temperature);
+                        sprintf(monitorBuffer,f_03d,temperature);
                         break;
                     case TAG_HMDT:
-                        sprintf(monitorBuffer,"%d",humidity);
+                        sprintf(monitorBuffer,f_03d,humidity);
                         break;
+#ifdef MONITOR_DEBUG
+                    case TAG_ACTS:
+                        for (addr = 0; addr < MAX_DEVICES; addr += 1) {
+                            sprintf(temp,f_03d,(int)deviceActions[addr]);
+                            Serial.print(temp);
+                            if (addr > 0 && addr % 8 == 0) {
+                                Serial.println(" ");
+                            } else {
+                                Serial.print(" ");
+                            }
+                        }
+                        Serial.println(" ");
+                        break;
+#endif
                     default:
                         break;
                 }
-            } else if ((addr = findDevice(arg)) == 0) {
+            } else if ((block = findDevice(arg)) == 0) {
                     strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                getDevice(addr);
+                getDevice(block);
             }
             break;
         case CMD_SAY: // echo
             strcpy(monitorBuffer, arg);
             strcat(monitorBuffer," ");
-            strcpy(monitorBuffer, val);
+            strcat(monitorBuffer, val);
             break;
         case CMD_RST:
             reset();
+            break;
+        case CMD_ACT: // Set device action
+            if ((block = findDevice(arg)) == 0) {
+                strcpy_P(monitorBuffer,badTag);
+            } else { // should be one of our defined names
+                addr = atoi(val); // not really address, just reusing variable
+                if (addr == 0) { // read request
+                    sprintf(monitorBuffer,f_03d,(int)deviceActions[block]);
+                } else { // write request
+                    deviceActions[block] = (byte)addr;
+                    // if this is just plain on or off, make sure it is actioned
+                    if (addr == DEVICE_ON) {
+                        setDevice(block, 1);
+                    } else if (addr == DEVICE_OFF || addr == 0) {
+                        setDevice(block, 0);
+                    }
+                }
+            }
             break;
         case CMD_WEB: // Write EEPROM byte
         case CMD_WEP: // write EEPROM pin value
@@ -212,7 +289,7 @@ void monitorRun() {
             }
             break;
         case CMD_REB: // Read EEPROM byte
-            sprintf(monitorBuffer,"%03u",EEPROM.read(atoi(arg)));
+            sprintf(monitorBuffer,f_03d,EEPROM.read(atoi(arg)));
             break;
         case CMD_WET: // Write EEPROM tag
             addr = atoi(arg);
@@ -240,9 +317,19 @@ void monitorRun() {
         case CMD_DMP:
 #ifdef MONITOR_DEBUG
             addr = atoi(arg);
+            addr -= addr % 16; // round down to nearest 16
+            Serial.print("     ");
+            for (int i = 0; i < 16; i++) {
+                sprintf(temp,f_03d,i);
+                Serial.print(temp);
+                Serial.print(" ");
+            }
+            Serial.println(" ");
             for (int j = 0; j < 8; j++) {
+                sprintf(temp,"%04u ", addr+(16*j));
+                Serial.print(temp);
                 for (int i = 0; i < 16; i++) {
-                    sprintf(temp,"%03u",EEPROM.read(addr+(16*j)+i));
+                    sprintf(temp,f_03d,EEPROM.read(addr+(16*j)+i));
                     Serial.print(temp);
                     Serial.print(" ");
                 }

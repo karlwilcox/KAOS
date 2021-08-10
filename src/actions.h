@@ -2,7 +2,7 @@
 #define ACTIONS_H
 
 void blink();
-void flash1s();
-void flash0_5s();
+void flash(unsigned int action);
+void sampleInputs(unsigned int action);
 
 #endif // !ACTIONS_H
