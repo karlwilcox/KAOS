@@ -15,4 +15,15 @@
 #define MAX_DEVICES 32
 
 
+typedef union {
+    byte bytes[4];
+    uint32_t bits;
+} bytes4;
+
+typedef struct {
+    bytes4 state;
+    unsigned int block;
+    unsigned int numRegisters;
+} shiftRegister;
+
 #endif

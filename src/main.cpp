@@ -1,11 +1,12 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "config.h"
 #include "monitor.h"
 #include "actions.h"
 #include "devices.h"
-#include "config.h"
 #include "eeprom_layout.h"
 #include "SimpleDHT.h"
+#include "LiquidCrystal.h"
 
 char monitorBuffer[MONITOR_BUFFER_SIZE];
 char com[4], arg[5], val[MONITOR_BUFFER_SIZE - 7];
@@ -17,9 +18,14 @@ int minutes = 0;
 int seconds = 0;
 int temperature = 20;
 int humidity = 50;
-unsigned int flags;
+shiftRegister sr1;
+uint16_t flags;
 // pointers to devices (only created if they exist)
 SimpleDHT11 *dht11;
+LiquidCrystal *lcd = NULL;
+char lcdLine0[17];
+char lcdLine1[17];
+char stateSR[4]; // bit map for digital shift register (up to 48 outputs)
 // shadow array for device actions,
 // intially populated from EEPROM
 byte deviceActions[MAX_DEVICES]; // should really malloc this TODO!!
@@ -56,6 +62,12 @@ void loop(){
     // do stuff once every 10th second
     if (flags & FLAG_AUTO_OUTPUTS) {
       ;
+    }
+  }
+  if (ticks % (TICKSPERSECOND / 4) == 0) {
+    // do stuff once every quarter second
+    if (flags & FLAG_AUTO_OUTPUTS) {
+      if (lcd != NULL) updateLCD();
     }
   }
   if (ticks % (TICKSPERSECOND / 5) == 0) {

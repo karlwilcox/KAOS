@@ -9,6 +9,10 @@
  * by a 4 character, case-sensitive tag. Block 0 is special, and describes the device itself
  */
 
+// some useful macros
+#define BLOCK_SIZE 16          // space set aside for device information
+#define EEPROM_ADDRESS(a,b) (((a) * BLOCK_SIZE) + (b))
+
 //////////////////////// Block 0 //////////////////////////////////////////
 
 // byte 0 is not used, (too easy to overwrite)
@@ -51,24 +55,25 @@
 */
 
 // Device definitions
-#define DEVICE_SIZE 16          // space set aside for device information
-#define DEVICE_TYPE 0           // offsets for fixed information
-#define DEVICE_SUBTYPE 1        // e.g. colour of led?
-#define DEVICE_TAG 2            // bytes 2-5 are the 4 character tag
+#define OFFSET_TYPE 0           // offsets for fixed information
+#define OFFSET_SUBTYPE 1        // e.g. colour of led?
+#define OFFSET_TAG 2            // bytes 2-5 are the 4 character tag
 // bytes 6 to 15 are device dependent, but there are some common ones
-#define DEVICE_ACTION 6         // default action
-#define DEVICE_VALUE 7          // default value
-#define DEVICE_PIN 8            // Use WEP to populate this
+#define OFFSET_ACTION 6         // default action
+#define OFFSET_VALUE 7          // default value
+#define OFFSET_PIN1 8            // Use WEP to populate this
+#define OFFSET_PIN2 9            // Use WEP to populate this
+#define OFFSET_PIN3 10            // Use WEP to populate this
+#define OFFSET_PIN4 11            // Use WEP to populate this
+#define OFFSET_PIN5 12            // Use WEP to populate this
+#define OFFSET_PIN6 13            // Use WEP to populate this
 
 // Values for the device type field
 // - special values first
 #define DEVICE_END 255          // Marks the end of the list of devices (default, unwritten EEPROM)
 #define DEVICE_CONT 254         // This device needs a further 15 bytes of data
 #define DEVICE_DELETED 253      // Marks a deleted device, ignore this
-#define DEVICE_INPUT 252        // Generic digital input device
-#define DEVICE_ANALOG 251       // Generic analog input device
-#define DEVICE_OUTPUT 250       // Generic digital output
-#define DEVICE_PWM 249          // Generic PWM output
+#define DEVICE_UPPER 250        // Everything above this can be ignored
 
 // Default Actions
 // generic
@@ -109,7 +114,7 @@
 | 015    |                     |                            |
 +--------+---------------------+----------------------------+
 (*) Special values (virtual pins) are as follows:
-100 - 147: pins 0 to 47 of the first multiplexor
+101 - 132: pins 0 to 32 of the first multiplexor
 150 - 197: pins 0 to 47 of the second multiplexor
 ?? 200 - 247: pins 0 to 47 of the third multiplexor?
 
@@ -118,8 +123,9 @@ And there are separate multiplexors for plain and PWM LEDs
 
 
 // -- normal LEDs
-#define DEVICE_LED 0            // generic LED
-#define DEVICE_PWMLED 1         // LED on a PWM output
+#define DEVICE_OUTPUT 0            // generic output device
+#define DEVICE_LED 1            // generic LED
+#define DEVICE_PWMLED 2         // LED on a PWM output
 // LED subtype values
 #define LEDRED 1           // One or more LEDs of the given colour
 #define LEDGRN 2
@@ -194,36 +200,119 @@ And there are separate multiplexors for plain and PWM LEDs
 */
 // -- RGB LEDs
 #define DEVICE_RGBLED 2 // device type
-#define DEVICE_RGBPINR 8   // offset of  red pin
-#define DEVICE_RGBPING 9   // offset of  red pin
-#define DEVICE_RGBPINB 10  // offset of  red pin
+#define OFFSET_RGBPINR OFFSET_PIN1   // offset of  red pin
+#define OFFSET_RGBPING OFFSET_PIN2   // offset of  red pin
+#define OFFSET_RGBPINB OFFSET_PIN3 0  // offset of  red pin
 
 // values 19 to 23 not used
-// -- Shift Registers
-#define SHFT8  24       // 8 output shift register
-#define SHFT16  25       // 16 output shift register
-#define SHFT24  26       // 24 output shift register
-#define SHFT32  27       // 32 output shift register
-#define SHFT48  28       // 48 output shift register
-// values 29-31 not used
+
+////////////////////////////////// Shift Registers ///////////////////////////
+/* Layout of shift register block
+
++--------+---------------------+----------------------------+
+| Offset | Content             | Notes                      |
++--------+---------------------+----------------------------+
+| 000    | Device type         |                            |
++--------+---------------------+----------------------------+
+| 001    | Total no. of outputs| 8/16/24 or 32              |
++--------+---------------------+----------------------------+
+| 002    | Device tag          |                            |
++--------+                     |                            |
+| 003    |                     |                            |
++--------+                     |                            |
+| 004    |                     |                            |
++--------+                     |                            |
+| 005    |                     |                            |
++--------+---------------------+----------------------------+
+| 006    | data input pin      | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 007    | Clock pin           | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 008    | Latch pin           | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 009    | Unused              |                            |
+| to     |                     |                            |
+| 015    |                     |                            |
++--------+---------------------+----------------------------+
+
+*/
+
+#define DEVICE_DIGITAL_SR  24       // digital output shift register
+#define DEVICE_PWM_SR  25       // pwm output shift register
+
+#define OFFSET_SR_DATA_PIN      OFFSET_PIN1
+#define OFFSET_SR_CLOCK_PIN     OFFSET_PIN2
+#define OFFSET_SR_LATCH_PIN     OFFSET_PIN3
+
+// values 26-31 not used
 // -- Motors (to be done)
 // 32 - 49
 // -- Relays (to be done)
 // 50 - 59
+
+#define DEVICE_LCD 60          // LCD Screen
+// values 67 - 99 not used
+
+/* Layout of LCD block
+
++--------+---------------------+----------------------------+
+| Offset | Content             | Notes                      |
++--------+---------------------+----------------------------+
+| 000    | Device type         |                            |
++--------+---------------------+----------------------------+
+| 001    | Device subtype      |                            |
++--------+---------------------+----------------------------+
+| 002    | Device tag          |                            |
++--------+                     |                            |
+| 003    |                     |                            |
++--------+                     |                            |
+| 004    |                     |                            |
++--------+                     |                            |
+| 005    |                     |                            |
++--------+---------------------+----------------------------+
+| 006    | Device action       |                            |
++--------+---------------------+----------------------------+
+| 007    | Device value        |                            |
++--------+---------------------+----------------------------+
+| 008    | Data pin 0          | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 009    | Data pin 1          | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 010    | Data pin 2          | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 011    | Data pin 3          | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 012    | RW Pin              | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 013    | RS Pin              | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 014    | (EN pin, if reqd)   | Populate with WEP          |
++--------+---------------------+----------------------------+
+| 015    | (Not used)          | Populate with WEP          |
++--------+---------------------+----------------------------+
+
+*/
 // LCD Screen
-#define LCDD0 60        // LCD Screen data lines
-#define LCDD1 61
-#define LCDD2 62
-#define LCDD3 63
-#define LCDRW 64
-#define LCDRS 65
-#define LCDEN 66
-// values 67 - 69 not used
+#define OFFSET_LCDRS OFFSET_PIN1        // LCD Screen data lines
+#define OFFSET_LCDEN OFFSET_PIN2
+#define OFFSET_LCDD4 OFFSET_PIN3
+#define OFFSET_LCDD5 OFFSET_PIN4
+#define OFFSET_LCDD6 OFFSET_PIN5
+#define OFFSET_LCDD7 OFFSET_PIN6
+#define OFFSET_LCDRW OFFSET_PIN7
+
+// LCD screen subtypes
+#define LCD16x2 1
+
 
 
 ////////////////////////////////// INPUT Devices ///////////////////////////
-/* Layout of generic input block
 
+#define DEVICE_INPUT 100        // Generic input device (read digital value from pin)
+#define DEVICE_ANALOG 101        // Generic input device (read analog value from pin)
+#define DEVICE_TMPHMD 110      // Temperature and humidity sensor - uses default layout
+
+/* Layout of generic input block
 +--------+---------------------+----------------------------+
 | Offset | Content             | Notes                      |
 +--------+---------------------+----------------------------+
@@ -258,7 +347,6 @@ And there are separate multiplexors for plain and PWM LEDs
 */
 
 // inputs
-#define DEVICE_TMPHMD  70      // Temperature and humidity sensor - uses default layout
 #define DEVICE_BUTTON  71      // Momentary button
 #define DEVICE_SWITCH  72      // on/off switch
 #define DEVICE_GENPOT  73      // Generic potentiometer

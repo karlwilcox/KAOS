@@ -1,11 +1,11 @@
 /*
  * Monitor code
  */
-#include "monitor.h"
-#include "eeprom_layout.h"
 #include <Arduino.h>
 #include <EEPROM.h>
 #include "config.h"
+#include "monitor.h"
+#include "eeprom_layout.h"
 #include "devices.h"
 
 int monitorFlags = 0;
@@ -96,8 +96,9 @@ void monitorRun() {
     CMD_WEP,    // WEP.aaaa.ppp - write value of pin ppp to EEPROM address aaaa
     CMD_ACT,    // ACT.tttt.vvv - Set current action for device tttt to vvv (255 to turn off)
                 // ACT.tttt - Return current action for device with tag tttt
+    CMD_WBS,    // WBS.aaaa - Write byte sequence off following lines until 255
     };
-    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACT";
+    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACTWBS";
     enum tags { // Note these are effectively RESERVED tag names and should NOT be used
                 // for LEDs or other devices. Values are read/write unless shown otherwise
     TAG_NONE,   // No built in value
@@ -109,15 +110,28 @@ void monitorRun() {
     TAG_ALLD,   // Refers to all devices (write only)
     TAG_TMPT,   // temperature value
     TAG_HMDT,   // Humidity
-    TAG_ACTS,   // Dump shadow actions (read only)
+ //   TAG_ACTS,   // Dump shadow actions (read only)
     // TAG_BORD,   // Board identity (read only)
     };
-    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDTACTS";
+    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDT";
+    static unsigned int byteAddr = 0;
     enum cmds cmdVal = CMD_BAD;
     enum tags tagVal = TAG_NONE;
     char temp[6], c;
     unsigned int addr;
     int block;
+
+    // First, check if we are in the middle of writing a byte stream...
+    if (byteAddr > 0) { // read data as a byte, write to current address
+        if (monitorBuffer[0] == ' ') {
+            byteAddr = 0; // read no more bytes
+        } else {
+            // otherwise,
+            addr = atoi(monitorBuffer); // used a temp value, not address
+            EEPROM.write(byteAddr++, (byte)addr);
+        }
+        return;
+    }
 
     // Ignore lines starting with a space or a #
     // to allow for comments in scripts
@@ -153,6 +167,9 @@ void monitorRun() {
     switch (cmdVal) {
         case CMD_BAD:
             strcpy_P(monitorBuffer, badCmd);
+            break;
+        case CMD_WBS:
+            byteAddr = atoi(arg);
             break;
         case CMD_WHO:
             sprintf(monitorBuffer,f_03d,EEPROM.read(UNITID));
@@ -226,7 +243,7 @@ void monitorRun() {
                     case TAG_HMDT:
                         sprintf(monitorBuffer,f_03d,humidity);
                         break;
-#ifdef MONITOR_DEBUG
+/* #ifdef MONITOR_DEBUG
                     case TAG_ACTS:
                         for (addr = 0; addr < MAX_DEVICES; addr += 1) {
                             sprintf(temp,f_03d,(int)deviceActions[addr]);
@@ -239,7 +256,7 @@ void monitorRun() {
                         }
                         Serial.println(" ");
                         break;
-#endif
+#endif */
                     default:
                         break;
                 }
@@ -284,7 +301,7 @@ void monitorRun() {
                 if (cmdVal == CMD_WEB) {
                     EEPROM.write(addr,atoi(val));
                 } else {
-                    EEPROM.write(addr,str2pin(val[0],val[1],val[2]));
+                    EEPROM.write(addr,str2pin(tolower(val[0]),val[1],val[2]));
                 }
             }
             break;

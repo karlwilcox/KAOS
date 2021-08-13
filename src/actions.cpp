@@ -1,10 +1,12 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "config.h"
 #include "actions.h"
 #include "devices.h"
 #include "eeprom_layout.h"
-#include "config.h"
 #include "SimpleDHT.h"
+#include "LiquidCrystal.h"
+#include "devices.h"
 
 extern byte deviceActions[];
 // deviceActions is initialised to all OFF
@@ -12,8 +14,11 @@ extern byte deviceActions[];
 // Hence we can just traverse this array to find which devices
 // are set to use each action
 
-extern int temperature, humidity;
+extern int temperature, humidity, hours, minutes;
 extern SimpleDHT11 *dht11;
+extern char lcdLine0[], lcdLine1[];
+extern LiquidCrystal *lcd;
+extern shiftRegister sr1;
 
 void blink() { // alternate every 1/2 second
     static char phase = 'a';
@@ -24,7 +29,7 @@ void blink() { // alternate every 1/2 second
         if (!(deviceActions[block] == (byte)ACTION_BLNKA || deviceActions[block] == (byte)ACTION_BLNKB)) {
             continue;
         }
-        pin = EEPROM.read((block * DEVICE_SIZE) + DEVICE_PIN);
+        pin = EEPROM.read((block * BLOCK_SIZE) + OFFSET_PIN1);
         if (phase == 'a') {
             if (deviceActions[block] == (byte)ACTION_BLNKA) {
                 digitalWrite(pin,HIGH);
@@ -72,7 +77,7 @@ void flash(unsigned int action) { // flash as per action
         if (!(deviceActions[devBlock] == (byte)action)) {
             continue;
         }
-        pin = EEPROM.read((devBlock * DEVICE_SIZE) + DEVICE_PIN);
+        pin = EEPROM.read((devBlock * BLOCK_SIZE) + OFFSET_PIN1);
         digitalWrite(pin,state);
     }
 }
@@ -85,14 +90,167 @@ void sampleInputs(unsigned int rate) {
         if (!(deviceActions[devBlock] == (byte)rate)) {
             continue;
         }
-        switch (EEPROM.read((devBlock * DEVICE_SIZE) + DEVICE_TYPE)) {
+        switch (EEPROM.read((devBlock * BLOCK_SIZE) + OFFSET_TYPE)) {
             case DEVICE_TMPHMD:    // temperature & humidity
-                pin = EEPROM.read((devBlock * DEVICE_SIZE) + DEVICE_PIN);
+                pin = EEPROM.read((devBlock * BLOCK_SIZE) + OFFSET_PIN1);
                 dht11->read(pin, (byte*)&temperature, (byte *)&humidity, NULL);
                 break;
             default:
                 break;
         }
     }
-        
+}
+
+void writeDSR(shiftRegister *sr) {
+    digitalWrite(EEPROM.read(EEPROM_ADDRESS(sr->block, OFFSET_SR_LATCH_PIN)), LOW);
+    for (unsigned int i = 0; i < sr->numRegisters; i++) {
+        shiftOut(EEPROM.read(EEPROM_ADDRESS(sr->block, OFFSET_SR_DATA_PIN)), EEPROM.read(EEPROM_ADDRESS(sr->block, OFFSET_SR_DATA_PIN)), MSBFIRST, sr->state.bytes[i]);
+    }
+    digitalWrite(EEPROM.read(EEPROM_ADDRESS(sr->block, OFFSET_SR_LATCH_PIN)), HIGH);
+}
+
+void myDigitalWrite(unsigned int pin, unsigned int value) {
+    if (pin < 100) {
+        digitalWrite(pin, value);
+    } else {
+        pin -= 101;
+        sr1.state.bits &= 1 << pin;
+        writeDSR(&sr1);
+    }
+}
+
+const char lyrics[] PROGMEM = "I am unwritten, can't read my mind * \
+I'm undefined * \
+I'm just beginning, the pen's in my hand * \
+Ending unplanned * \
+ * \
+Staring at the blank page before you * \
+Open up the dirty window * \
+Let the sun illuminate the words that you could not find * \
+ * \
+Reaching for something in the distance * \
+So close you can almost taste it * \
+Release your inhibitions * \
+ * \
+Feel the rain on your skin * \
+No one else can feel it for you * \
+Only you can let it in * \
+No one else, no one else * \
+Can speak the words on your lips * \
+Drench yourself in words unspoken * \
+Live your life with arms wide open * \
+Today is where your book begins * \
+ * \
+The rest is still unwritten * \
+ * \
+I break tradition, sometimes my tries * \
+Are outside the line * \
+We've been conditioned to not make mistakes * \
+But I can't live that way * \
+ * \
+Staring at the blank page before you * \
+Open up the dirty window * \
+Let the sun illuminate the words that you could not find * \
+ * \
+Reaching for something in the distance * \
+So close you can almost taste it * \
+Release your inhibitions * \
+ * \
+Feel the rain on your skin * \
+No one else can feel it for you * \
+Only you can let it in * \
+No one else, no one else * \
+Can speak the words on your lips * \
+Drench yourself in words unspoken * \
+Live your life with arms wide open * \
+Today is where your book begins * \
+ * \
+Feel the rain on your skin * \
+No one else can feel it for you * \
+Only you can let it in * \
+No one else, no one else * \
+Can speak the words on your lips * \
+Drench yourself in words unspoken * \
+Live your life with arms wide open * \
+Today is where your book begins * \
+ * \
+The rest is still unwritten * \
+ * \
+Staring at the blank page before you * \
+Open up the dirty window * \
+Let the sun illuminate the words that you could not find * \
+ * \
+Reaching for something in the distance * \
+So close you can almost taste it * \
+Release your inhibitions * \
+ * \
+Feel the rain on your skin * \
+No one else can feel it for you * \
+Only you can let it in * \
+No one else, no one else * \
+Can speak the words on your lips * \
+Drench yourself in words unspoken * \
+Live your life with arms wide open * \
+Today is where your book begins * \
+ * \
+Feel the rain on your skin * \
+No one else can feel it for you * \
+Only you can let it in * \
+No one else, no one else * \
+Can speak the words on your lips * \
+Drench yourself in words unspoken * \
+Live your life with arms wide open * \
+Today is where your book begins * \
+ * \
+The rest is still unwritten * \
+The rest is still unwritten * \
+The rest is still unwritten * "; 
+
+
+void updateLCD() { // we are called every 1/4 second, 
+    static int count = 0;
+    static unsigned int curPos = 0;
+    char temp[10];
+
+    if (count == 12) {
+        // After 3 seconds display centigrade
+        sprintf(temp, "%4d", (int)temperature);
+        lcdLine0[0] = temp[0];
+        lcdLine0[1] = temp[1];
+        lcdLine0[2] = temp[2];
+        lcdLine0[3] = temp[3];
+        lcdLine0[4] = 'C';    
+        // after another 3 seconds display fahrenheit
+        // update the clock and humidity
+    } else if (count == 24) {
+        sprintf(temp, "%4d", (((int)temperature * 9) / 5) + 32);
+        lcdLine0[0] = temp[0];
+        lcdLine0[1] = temp[1];
+        lcdLine0[2] = temp[2];
+        lcdLine0[3] = temp[3];
+        lcdLine0[4] = 'F';  
+        sprintf(temp, "%02u", hours);
+        lcdLine0[6] = temp[0];
+        lcdLine0[7] = temp[1];
+        sprintf(temp, "%02u", minutes);
+        lcdLine0[9] = temp[0];
+        lcdLine0[10] = temp[1];
+        sprintf(temp, "%3d", (int)humidity);
+        lcdLine0[12] = temp[0];
+        lcdLine0[13] = temp[1];
+        lcdLine0[14] = temp[2];
+    }
+    if (count++ > 24) count = 0;
+    // but on every occaision we update the crawl
+    for (int i = 0; i <= 15; i++) {
+      lcdLine1[i] = lcdLine1[i+1];
+    }
+    lcdLine1[15] = pgm_read_byte_near(lyrics + curPos);
+    if (++curPos >= strlen_P(lyrics)) {
+      curPos = 0;
+    }
+    lcd->setCursor(0,0);
+    lcd->print(lcdLine0);
+    lcd->setCursor(0,1);
+    lcd->print(lcdLine1);
 }
