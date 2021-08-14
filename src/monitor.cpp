@@ -110,10 +110,10 @@ void monitorRun() {
     TAG_ALLD,   // Refers to all devices (write only)
     TAG_TMPT,   // temperature value
     TAG_HMDT,   // Humidity
- //   TAG_ACTS,   // Dump shadow actions (read only)
+    TAG_ACTS,   // Dump shadow actions (read only)
     // TAG_BORD,   // Board identity (read only)
     };
-    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDT";
+    const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDTACTS";
     static unsigned int byteAddr = 0;
     enum cmds cmdVal = CMD_BAD;
     enum tags tagVal = TAG_NONE;
@@ -129,6 +129,7 @@ void monitorRun() {
             // otherwise,
             addr = atoi(monitorBuffer); // used a temp value, not address
             EEPROM.write(byteAddr++, (byte)addr);
+            monitorBuffer[0] = '\0';
         }
         return;
     }
@@ -172,13 +173,13 @@ void monitorRun() {
             byteAddr = atoi(arg);
             break;
         case CMD_WHO:
-            sprintf(monitorBuffer,f_03d,EEPROM.read(UNITID));
+            sprintf(monitorBuffer,f_03d,EEPROM.read(ADDRESS_UNIT_ID));
             monitorBuffer[3] = ' ';
             monitorBuffer[4] = ' ';
-            monitorBuffer[5] = EEPROM.read(UNITTYPE);
-            monitorBuffer[6] = EEPROM.read(UNITTYPE+1);
-            monitorBuffer[7] = EEPROM.read(UNITTYPE+2);
-            monitorBuffer[8] = EEPROM.read(UNITTYPE+3);
+            monitorBuffer[5] = EEPROM.read(ADDRESS_UNIT_TAG);
+            monitorBuffer[6] = EEPROM.read(ADDRESS_UNIT_TAG+1);
+            monitorBuffer[7] = EEPROM.read(ADDRESS_UNIT_TAG+2);
+            monitorBuffer[8] = EEPROM.read(ADDRESS_UNIT_TAG+3);
             monitorBuffer[9] = '\0';
             break;
         case CMD_SET:
@@ -243,7 +244,7 @@ void monitorRun() {
                     case TAG_HMDT:
                         sprintf(monitorBuffer,f_03d,humidity);
                         break;
-/* #ifdef MONITOR_DEBUG
+#ifdef MONITOR_DEBUG
                     case TAG_ACTS:
                         for (addr = 0; addr < MAX_DEVICES; addr += 1) {
                             sprintf(temp,f_03d,(int)deviceActions[addr]);
@@ -256,7 +257,7 @@ void monitorRun() {
                         }
                         Serial.println(" ");
                         break;
-#endif */
+#endif
                     default:
                         break;
                 }
@@ -334,24 +335,24 @@ void monitorRun() {
         case CMD_DMP:
 #ifdef MONITOR_DEBUG
             addr = atoi(arg);
-            addr -= addr % 16; // round down to nearest 16
+            addr -= addr % BLOCK_SIZE; // round down to block size 16
             Serial.print("     ");
-            for (int i = 0; i < 16; i++) {
+            for (int i = 0; i < BLOCK_SIZE; i++) {
                 sprintf(temp,f_03d,i);
                 Serial.print(temp);
                 Serial.print(" ");
             }
             Serial.println(" ");
             for (int j = 0; j < 8; j++) {
-                sprintf(temp,"%04u ", addr+(16*j));
+                sprintf(temp,"%04u ", addr+(BLOCK_SIZE*j));
                 Serial.print(temp);
-                for (int i = 0; i < 16; i++) {
-                    sprintf(temp,f_03d,EEPROM.read(addr+(16*j)+i));
+                for (int i = 0; i < BLOCK_SIZE; i++) {
+                    sprintf(temp,f_03d,EEPROM.read(addr+(BLOCK_SIZE*j)+i));
                     Serial.print(temp);
                     Serial.print(" ");
                 }
-                for (int i = 0; i < 16; i++) {
-                    c = EEPROM.read(addr+(16*j)+i);
+                for (int i = 0; i < BLOCK_SIZE; i++) {
+                    c = EEPROM.read(addr+(BLOCK_SIZE*j)+i);
                     if (isalnum(c)) {
                         Serial.print(c);
                     } else {

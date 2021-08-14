@@ -10,16 +10,16 @@
  */
 
 // some useful macros
-#define BLOCK_SIZE 16          // space set aside for device information
+#define BLOCK_SIZE 10          // space set aside for device information
 #define EEPROM_ADDRESS(a,b) (((a) * BLOCK_SIZE) + (b))
 
 //////////////////////// Block 0 //////////////////////////////////////////
 
 // byte 0 is not used, (too easy to overwrite)
-#define UNITID 1                // unique ID for each board, used for I2C comms
-#define UNITTYPE 0x02           // Tag - Type of board
-#define DEFAULT_FLAG 0x06
-// 0x07 to 0x0F UNUSED
+#define ADDRESS_UNIT_ID 1                // unique ID for each board, used for I2C comms
+#define ADDRESS_UNIT_TAG 2           // Tag - Type of board
+#define ADDRESS_FLAG 6
+// 7 to 9 UNUSED
 
 // tag values for UNITTYPE
 #define TAG_UNO3 "UNO3"          // The original (big) Arduino
@@ -30,27 +30,27 @@
 
 /* Layout of block 0 - device block
 
-+--------+---------------------+----------------------------+
-| Offset | Content             | Notes                      |
-+--------+---------------------+----------------------------+
-| 000    | Not used            | (too easy to overwrite)    |
-+--------+---------------------+----------------------------+
-| 001    | Board  ID           | used as the I2C address    |
-+--------+---------------------+----------------------------+
-| 002    | Board type          | one of:                    |
-+--------+                     | UNO3, NANO, MEGA           |
-| 003    |                     |                            |
-+--------+                     |                            |
-| 004    |                     |                            |
-+--------+                     |                            |
-| 005    |                     |                            |
-+--------+---------------------+----------------------------+
-| 006    | Default flag value  | See config.h for mapping   |
-+--------+---------------------+----------------------------+
-| 007    | Unused              |                            |
-| to     |                     |                            |
-| 015    |                     |                            |
-+--------+---------------------+----------------------------+
++--------+---------------------+----------------------------+--------------------------+
+| Address| Content             | Notes                      | Defined                               
++--------+---------------------+----------------------------+--------------------------+
+| 0000   | Not used            | (too easy to overwrite)    |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 0001   | Board  ID           | used as the I2C address    | ADDRESS_UNIT_ID          |
++--------+---------------------+----------------------------+--------------------------+
+| 0002   | Board type          | one of:                    | ADDRESS_UNIT_TAG         |
++--------+                     | UNO3, NANO, MEGA           |                          |
+| 0003   |                     |                            |                          |
++--------+                     |                            |                          |
+| 0004   |                     |                            |                          |
++--------+                     |                            |                          |
+| 0005   |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 0006   | Default flag value  | See config.h for mapping   | ADDRESS_FLAG             |
++--------+---------------------+----------------------------+--------------------------+
+| 0007   | Unused              |                            |                          |
+| to     |                     |                            |                          |
+| 0009   |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
 
 */
 
@@ -58,12 +58,12 @@
 #define OFFSET_TYPE 0           // offsets for fixed information
 #define OFFSET_SUBTYPE 1        // e.g. colour of led?
 #define OFFSET_TAG 2            // bytes 2-5 are the 4 character tag
-// bytes 6 to 15 are device dependent, but there are some common ones
+// bytes 6 to 9 are device dependent, but there are some common ones
 #define OFFSET_ACTION 6         // default action
-#define OFFSET_VALUE 7          // default value
-#define OFFSET_PIN1 8            // Use WEP to populate this
-#define OFFSET_PIN2 9            // Use WEP to populate this
-#define OFFSET_PIN3 10            // Use WEP to populate this
+#define OFFSET_PIN1 7            // Use WEP to populate this
+#define OFFSET_PIN2 8            // Use WEP to populate this
+#define OFFSET_PIN3 9             // Use WEP to populate this
+// OFFSET 10 is the coktinuation byte
 #define OFFSET_PIN4 11            // Use WEP to populate this
 #define OFFSET_PIN5 12            // Use WEP to populate this
 #define OFFSET_PIN6 13            // Use WEP to populate this
@@ -71,7 +71,7 @@
 // Values for the device type field
 // - special values first
 #define DEVICE_END 255          // Marks the end of the list of devices (default, unwritten EEPROM)
-#define DEVICE_CONT 254         // This device needs a further 15 bytes of data
+#define DEVICE_CONT 254         // This device needs a further 10 bytes of data
 #define DEVICE_DELETED 253      // Marks a deleted device, ignore this
 #define DEVICE_UPPER 250        // Everything above this can be ignored
 
@@ -88,31 +88,29 @@
 ////////////////////////////////// LED Devices ///////////////////////////
 /* Layout of generic (also plain LED) block
 
-+--------+---------------------+----------------------------+
-| Offset | Content             | Notes                      |
-+--------+---------------------+----------------------------+
-| 000    | Device type         |                            |
-+--------+---------------------+----------------------------+
-| 001    | Device subtype      |                            |
-+--------+---------------------+----------------------------+
-| 002    | Device tag          |                            |
-+--------+                     |                            |
-| 003    |                     |                            |
-+--------+                     |                            |
-| 004    |                     |                            |
-+--------+                     |                            |
-| 005    |                     |                            |
-+--------+---------------------+----------------------------+
-| 006    | Default action      |                            |
-+--------+---------------------+----------------------------+
-| 007    | Device value        |                            |
-+--------+---------------------+----------------------------+
-| 008    | Device pin (*)      | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 009    | Unused              |                            |
-| to     |                     |                            |
-| 015    |                     |                            |
-+--------+---------------------+----------------------------+
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         |                            | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | Device pin (*)      | Populate with WEP          | OFFSET_PIN1              |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Unused              |                            |                          |
+| to     |                     |                            |                          |
+| 9      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
 (*) Special values (virtual pins) are as follows:
 101 - 132: pins 0 to 32 of the first multiplexor
 150 - 197: pins 0 to 47 of the second multiplexor
@@ -125,115 +123,108 @@ And there are separate multiplexors for plain and PWM LEDs
 // -- normal LEDs
 #define DEVICE_OUTPUT 0            // generic output device
 #define DEVICE_LED 1            // generic LED
-#define DEVICE_PWMLED 2         // LED on a PWM output
+#define DEVICE_PWM_LED 2         // LED on a PWM output
 // LED subtype values
-#define LEDRED 1           // One or more LEDs of the given colour
-#define LEDGRN 2
-#define LEDBLU 3
-#define LEDWHT 4
-#define LEDYEL 5
-#define LEDSFT 6        // Soft white
-#define LEDORG 7        // orange ?
+#define SUBTYPE_LEDRED 1           // One or more LEDs of the given colour
+#define SUBTYPE_LEDGRN 2
+#define SUBTYPE_LEDBLU 3
+#define SUBTYPE_LEDWHT 4
+#define SUBTYPE_LEDYEL 5
+#define SUBTYPE_LEDSFT 6        // Soft white
+#define SUBTYPE_LEDORG 7        // orange ?
 // LED Action values
+#define ACTION_NONE 255
+#define ACTION_RUN 1
 #define ACTION_BLNKA 2     // Blink on phase A
 #define ACTION_BLNKB 3     // Blink on phase B
 #define ACTION_FLSH1 4     // Flash 1s
 #define ACTION_FLSH2 5     // Flash 0.5s
 #define ACTION_FLSH3 6     // 0.5s on, 1s off
 // values 7-9 not used
-#define RND2S 10     // Random 20% duty cycle short time (10s)
-#define RND5S 11     // Random 50% duty cycle short time
-#define RND8S 12    // Random 80% duty cycle short time
-#define RND2M 13     // Random 20% duty cycle medium time (60s)
-#define RND5M 14    // Random 50% duty cycle medium time
-#define RND8M 15    // Random 80% duty cycle medium time
-#define RND2L 16    // Random 20% duty cycle medium time (180s)
-#define RND5L 17    // Random 50% duty cycle medium time
-#define RND8L 18    // Random 80% duty cycle medium time
+#define ACTION_RND2S 10     // Random 20% duty cycle short time (10s)
+#define ACTION_RND5S 11     // Random 50% duty cycle short time
+#define ACTION_RND8S 12    // Random 80% duty cycle short time
+#define ACTION_RND2M 13     // Random 20% duty cycle medium time (60s)
+#define ACTION_RND5M 14    // Random 50% duty cycle medium time
+#define ACTION_RND8M 15    // Random 80% duty cycle medium time
+#define ACTION_RND2L 16    // Random 20% duty cycle medium time (180s)
+#define ACTION_RND5L 17    // Random 50% duty cycle medium time
+#define ACTION_RND8L 18    // Random 80% duty cycle medium time
 // value 19 not used
-#define FLCK1 20    // Flicker fast (<1s cycle time)
-#define FLCK2 21    // Flicker medium (2s cycle time)
-#define FLCK3 22    // Flicker long (5s cycle time)
+#define ACTION_FLCK1 20    // Flicker fast (<1s cycle time)
+#define ACTION_FLCK2 21    // Flicker medium (2s cycle time)
+#define ACTION_FLCK3 22    // Flicker long (5s cycle time)
 // values 23 -24 not used
-#define CYC13 25    // Cycle 1 of 3
-#define CYC23 26    // Cycle 2 of 3
-#define CYC33 27    // Cycle 3 of 3
-#define CYC16 28    // As above, cycle of 6
-#define CYC26 29
-#define CYC36 30
-#define CYC46 31
-#define CYC56 32
-#define CYC66 33
+#define ACTION_CYC13 25    // Cycle 1 of 3
+#define ACTION_CYC23 26    // Cycle 2 of 3
+#define ACTION_CYC33 27    // Cycle 3 of 3
+#define ACTION_CYC16 28    // As above, cycle of 6
+#define ACTION_CYC26 29
+#define ACTION_CYC36 30
+#define ACTION_CYC46 31
+#define ACTION_CYC56 32
+#define ACTION_CYC66 33
 
 /* Layout of RGB LED block
 
-+--------+---------------------+----------------------------+
-| Offset | Content             | Notes                      |
-+--------+---------------------+----------------------------+
-| 000    | Device type         |                            |
-+--------+---------------------+----------------------------+
-| 001    | Device subtype      |                            |
-+--------+---------------------+----------------------------+
-| 002    | Device tag          |                            |
-+--------+                     |                            |
-| 003    |                     |                            |
-+--------+                     |                            |
-| 004    |                     |                            |
-+--------+                     |                            |
-| 005    |                     |                            |
-+--------+---------------------+----------------------------+
-| 006    | Device action       |                            |
-+--------+---------------------+----------------------------+
-| 007    | Device value        |                            |
-+--------+---------------------+----------------------------+
-| 008    | Device red pin      | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 009    | Device green pin    | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 010    | Device blue pin     | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 011    | Unused              |                            |
-| to     |                     |                            |
-| 015    |                     |                            |
-+--------+---------------------+----------------------------+
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         | DEVICE_RGB_LED             | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | Red Pin             | Populate with WEP          | OFFSET_RGBPINR           |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Green Pin           | Populate with WEP          | OFFSET_RGBPING           |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | Blue Pin            | Populate with WEP          | OFFSET_RGBPINB           |
++--------+---------------------+----------------------------+--------------------------+
 
 */
 // -- RGB LEDs
-#define DEVICE_RGBLED 2 // device type
+#define DEVICE_RGB_LED 2 // device type
 #define OFFSET_RGBPINR OFFSET_PIN1   // offset of  red pin
 #define OFFSET_RGBPING OFFSET_PIN2   // offset of  red pin
-#define OFFSET_RGBPINB OFFSET_PIN3 0  // offset of  red pin
+#define OFFSET_RGBPINB OFFSET_PIN3  // offset of  red pin
 
 // values 19 to 23 not used
 
 ////////////////////////////////// Shift Registers ///////////////////////////
 /* Layout of shift register block
-
-+--------+---------------------+----------------------------+
-| Offset | Content             | Notes                      |
-+--------+---------------------+----------------------------+
-| 000    | Device type         |                            |
-+--------+---------------------+----------------------------+
-| 001    | Total no. of outputs| 8/16/24 or 32              |
-+--------+---------------------+----------------------------+
-| 002    | Device tag          |                            |
-+--------+                     |                            |
-| 003    |                     |                            |
-+--------+                     |                            |
-| 004    |                     |                            |
-+--------+                     |                            |
-| 005    |                     |                            |
-+--------+---------------------+----------------------------+
-| 006    | data input pin      | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 007    | Clock pin           | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 008    | Latch pin           | Populate with WEP          |
-+--------+---------------------+----------------------------+
-| 009    | Unused              |                            |
-| to     |                     |                            |
-| 015    |                     |                            |
-+--------+---------------------+----------------------------+
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         | DEVICE_DIGITAL_SR          | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | Data input pin      | Populate with WEP          | OFFSET_SR_DATA_PIN       |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Clock Pin           | Populate with WEP          | OFFSET_SR_CLOCK_PIN      |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | Latch Pin           | Populate with WEP          | OFFSET_SR_LATCH_PIN      |
++--------+---------------------+----------------------------+--------------------------+
 
 */
 
@@ -254,6 +245,29 @@ And there are separate multiplexors for plain and PWM LEDs
 // values 67 - 99 not used
 
 /* Layout of LCD block
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         | DEVICE_RGB_LED             | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | Red Pin             | Populate with WEP          | OFFSET_PIN1              |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Green Pin           | Populate with WEP          | OFFSET_PIN2              |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | Blue Pin            | Populate with WEP          | OFFSET_PIN3              |
++--------+---------------------+----------------------------+--------------------------+
 
 +--------+---------------------+----------------------------+
 | Offset | Content             | Notes                      |
@@ -356,11 +370,11 @@ And there are separate multiplexors for plain and PWM LEDs
 
 
 // Input actions
-#define SMP100MS 100   // sample every 100ms
-#define SMP500MS 101   // sample every 500ms
-#define SMP1S 102   // sample every 1s
-#define SMP2S 103   // sample every 2s
-#define SMP5S 104   // sample every 5s
-#define SMP10S 105   // sample every 10 seconds
-#define SMP1M 105   // sample every 1 minute
+#define ACTION_SMP100MS 100   // sample every 100ms
+#define ACTION_SMP500MS 101   // sample every 500ms
+#define ACTION_SMP1S 102   // sample every 1s
+#define ACTION_SMP2S 103   // sample every 2s
+#define ACTION_SMP5S 104   // sample every 5s
+#define ACTION_SMP10S 105   // sample every 10 seconds
+#define ACTION_SMP1M 106   // sample every 1 minute
 

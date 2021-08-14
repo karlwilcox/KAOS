@@ -48,7 +48,7 @@ void setup(){
     deviceActions[i] = 0;
   }
   setupDevices();
-  flags = EEPROM.read(DEFAULT_FLAG);
+  flags = EEPROM.read(ADDRESS_FLAG);
 }
 
 void loop(){
@@ -84,10 +84,22 @@ void loop(){
       flash(ACTION_FLSH1);
     }
     if (flags & FLAG_AUTO_INPUTS) {
-      sampleInputs(SMP1M);
+      ;
     }
-    // always do these
+    // always do this
     tick();
+    // every 10 seconds
+    if ( seconds % 10 == 0) {
+      if (flags & FLAG_AUTO_INPUTS) {
+        sampleInputs(ACTION_SMP10S);
+      }
+    }
+    // once per minute
+    if ( seconds == 30) {
+      if (flags & FLAG_AUTO_INPUTS) {
+        sampleInputs(ACTION_SMP1M);
+      }
+    }
     ticks = 0;
   }
 }

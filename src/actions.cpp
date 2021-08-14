@@ -19,6 +19,7 @@ extern SimpleDHT11 *dht11;
 extern char lcdLine0[], lcdLine1[];
 extern LiquidCrystal *lcd;
 extern shiftRegister sr1;
+extern uint16_t flags;
 
 void blink() { // alternate every 1/2 second
     static char phase = 'a';
@@ -92,8 +93,13 @@ void sampleInputs(unsigned int rate) {
         }
         switch (EEPROM.read((devBlock * BLOCK_SIZE) + OFFSET_TYPE)) {
             case DEVICE_TMPHMD:    // temperature & humidity
+                // Serial.println("Read DHT");
                 pin = EEPROM.read((devBlock * BLOCK_SIZE) + OFFSET_PIN1);
-                dht11->read(pin, (byte*)&temperature, (byte *)&humidity, NULL);
+                if (dht11->read(pin, (byte*)&temperature, (byte *)&humidity, NULL)) {
+                    flags |= FLAG_DHT_FAIL;
+                } else {
+                    flags &= ~FLAG_DHT_FAIL;
+                }
                 break;
             default:
                 break;

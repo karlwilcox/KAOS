@@ -11,6 +11,8 @@
 #define FLAG_AUTO_OUTPUTS   0x02
 // Automatically run all input processing as per device actions
 #define FLAG_AUTO_INPUTS    0x04
+#define FLAG_DHT_FAIL       0x10
+
 
 #define MAX_DEVICES 32
 

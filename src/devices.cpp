@@ -22,6 +22,7 @@ void setupDevices() {
     unsigned int block = 1;   // skip past device 0, that is the board itself
     byte deviceType, deviceAction, devicePin;
     while ((deviceType = EEPROM.read(block * BLOCK_SIZE)) != DEVICE_END) {
+        deviceAction = ACTION_NONE;
         switch (deviceType) {
             case DEVICE_CONT:       // extra data, should already have been used
             case DEVICE_DELETED:    // deleted device, but more to come
@@ -31,7 +32,6 @@ void setupDevices() {
                 devicePin = EEPROM.read((block * BLOCK_SIZE) + OFFSET_PIN1);
                 pinMode(devicePin,OUTPUT);
                 deviceAction = EEPROM.read((block * BLOCK_SIZE) + OFFSET_ACTION);
-                deviceActions[block] = (byte)deviceAction;
                 if (deviceAction == DEVICE_ON) {
                     digitalWrite(devicePin,HIGH);
                 } else {
@@ -40,11 +40,12 @@ void setupDevices() {
                 break;
             case DEVICE_INPUT:
                 devicePin = EEPROM.read((block * BLOCK_SIZE) + OFFSET_PIN1);
+                deviceAction = EEPROM.read((block * BLOCK_SIZE) + OFFSET_ACTION);
                 pinMode(devicePin,INPUT);
                 break;
             case DEVICE_TMPHMD:
                 dht11 = new SimpleDHT11();
-                pinMode(EEPROM.read(EEPROM_ADDRESS(block, OFFSET_PIN1)));
+                deviceAction = EEPROM.read((block * BLOCK_SIZE) + OFFSET_ACTION);
                 break;
             case DEVICE_LCD:
                 lcd = new LiquidCrystal(EEPROM_ADDRESS(block,OFFSET_LCDRS),
@@ -59,6 +60,7 @@ void setupDevices() {
                 lcd->setCursor(0,0);
                 strcpy_P(lcdLine0, line0Default);
                 strcpy_P(lcdLine1, line1Default);
+                deviceAction = EEPROM.read((block * BLOCK_SIZE) + OFFSET_ACTION);
                 break;
             case DEVICE_DIGITAL_SR:
                 pinMode(EEPROM.read(EEPROM_ADDRESS(block, OFFSET_SR_DATA_PIN)), OUTPUT);
@@ -67,11 +69,13 @@ void setupDevices() {
                 sr1.block = block;
                 sr1.state.bits = 0;
                 sr1.numRegisters = EEPROM.read(EEPROM_ADDRESS(block, OFFSET_SUBTYPE));
+                deviceAction = EEPROM.read((block * BLOCK_SIZE) + OFFSET_ACTION);
                 break;
             default:
                 break;
 
         }
+        deviceActions[block] = (byte)deviceAction;
         block += 1;
     }
 }
@@ -124,14 +128,14 @@ void getDevice(unsigned int block) {
             sprintf(monitorBuffer, "%u", analogRead(EEPROM.read(pin)));
             break;
         case DEVICE_DIGITAL_SR:
-            sprintf(monitorBuffer, "%08x", sr1.state.bits);
+            sprintf(monitorBuffer, "%08lx", sr1.state.bits);
             break;
         default:
             break;
     }
 }
 
-void setDevice(unsigned int block, int value = -1) {
+void setDevice(unsigned int block, int value) {
     unsigned int pin;
     unsigned int writeVal;
     if (value == -1) {
