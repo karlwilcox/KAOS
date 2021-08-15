@@ -1,17 +1,27 @@
 /*
- * This file defines the standard layout of EEPROM data
+ * This file defines the standard layout of device data
  * for all Arduino devices using KAOS (Karl's Arduino
  * Operting System)
  */
 
 /*
- * The EEPROM is laid out as 16 byte blocks, each block describes one device, identified
- * by a 4 character, case-sensitive tag. Block 0 is special, and describes the device itself
- */
+  Memory is laid out as a series of 10 byte "permanent" data in EEPROM, along with
+  corresponding 4 byte blocks of volatile data. The precise meaning of most of the
+  data bytes is device dependant, as described below.
+*/
 
 // some useful macros
-#define BLOCK_SIZE 10          // space set aside for device information
-#define EEPROM_ADDRESS(a,b) (((a) * BLOCK_SIZE) + (b))
+#define EEPROM_BLOCK_SIZE 10          // space set aside for device information
+#define EEPROM_ADDRESS(a,b) (((a) * EEPROM_BLOCK_SIZE) + (b))
+#define eepromRead(a,b) EEPROM.read(EEPROM_ADDRESS(a,b))
+#define eepromWrite(a,b,c) EEPROM.write(EEPROM_ADDRESS(a,b),(c))
+
+#define STATE_BLOCK_SIZE 4
+#define STATE_ADDRESS(a,b) (((a) * STATE_BLOCK_SIZE) + (b))
+#define stateRead(a,b) (deviceStates[STATE_ADDRESS(a,b)])
+#define stateWrite(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] = (c))
+#define stateBitSet(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] |= (c))
+#define stateBitClear(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] &= (~c))
 
 //////////////////////// Block 0 //////////////////////////////////////////
 
@@ -28,10 +38,10 @@
 
 /////////////////////// Layout of remaining blocks /////////////////////////
 
-/* Layout of block 0 - device block
+/* Layout of eeprom block 0 - device block
 
 +--------+---------------------+----------------------------+--------------------------+
-| Address| Content             | Notes                      | Defined                               
+| Address| Content             | Notes                      | Defined                  |        
 +--------+---------------------+----------------------------+--------------------------+
 | 0000   | Not used            | (too easy to overwrite)    |                          |
 +--------+---------------------+----------------------------+--------------------------+
@@ -52,11 +62,27 @@
 | 0009   |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
 
+  Layout of state block 0 - device block
+
++--------+---------------------+----------------------------+--------------------------+
+| Byte   | Content             | Notes                      | Defined                  |        
++--------+---------------------+----------------------------+--------------------------+
+|   0    | Flag 1              | See config.h               | STATE_FLAG               |
++--------+---------------------+----------------------------+--------------------------+
+|   1    |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+|   2    |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+|   3    |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+
 */
+
+#define DEVICE_BOARD 0 // location of board info, block 0
 
 // Device definitions
 #define OFFSET_TYPE 0           // offsets for fixed information
-#define OFFSET_SUBTYPE 1        // e.g. colour of led?
+#define OFFSET_NEXT_DEVICE 1      // If in a sequence
 #define OFFSET_TAG 2            // bytes 2-5 are the 4 character tag
 // bytes 6 to 9 are device dependent, but there are some common ones
 #define OFFSET_ACTION 6         // default action
@@ -85,6 +111,8 @@
 #define NOTUSED 255     // the default (unwritten) value from the EEPROM
 #define BAD_PIN 255
 
+#define STATE_FLAG 0
+
 ////////////////////////////////// LED Devices ///////////////////////////
 /* Layout of generic (also plain LED) block
 
@@ -93,7 +121,7 @@
 +--------+---------------------+----------------------------+--------------------------+
 | 0      | Device type         |                            | OFFSET_TYPE              |
 +--------+---------------------+----------------------------+--------------------------+
-| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
+| 1      | (next device)       | if part of a chain         | OFFSET_NEXT_DEVICE       |
 +--------+---------------------+----------------------------+--------------------------+
 | 2      | Device tag          |                            | OFFSET_TAG               |
 +--------+                     |                            |                          |
@@ -107,36 +135,46 @@
 +--------+---------------------+----------------------------+--------------------------+
 | 7      | Device pin (*)      | Populate with WEP          | OFFSET_PIN1              |
 +--------+---------------------+----------------------------+--------------------------+
-| 8      | Unused              |                            |                          |
-| to     |                     |                            |                          |
-| 9      |                     |                            |                          |
+| 8      | SR device block     | if pin > 100               | OFFSET_SR_BLOCK          |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | (spare)             |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
 (*) Special values (virtual pins) are as follows:
-101 - 132: pins 0 to 32 of the first multiplexor
-150 - 197: pins 0 to 47 of the second multiplexor
-?? 200 - 247: pins 0 to 47 of the third multiplexor?
+101 - 132: pins 0 to 32 of shift register in block given in byte 8
+And there are separate multiplexors for plain and PWM LED  
+  
+  Layout of state block for LEDs
 
-And there are separate multiplexors for plain and PWM LEDs
++--------+---------------------+----------------------------+--------------------------+
+| Byte   | Content             | Notes                      | Defined                  |        
++--------+---------------------+----------------------------+--------------------------+
+|   0    | Current value       |                            | STATE_VALUE              |
++--------+---------------------+----------------------------+--------------------------+
+|   1    |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+|   2    | Current action      | (see below)                | STATE_ACTION             |
++--------+---------------------+----------------------------+--------------------------+
+|   3    | Time to run         | next state change (or 0)   | STATE_TTR                |
++--------+---------------------+----------------------------+--------------------------+
 */
 
+#define STATE_VALUE 0
+#define STATE_TTR   3
+#define STATE_ACTION 2
+#define TTR_UNIT_20ms 0
+#define TTR_UNIT_100ms 1
+#define TTR_UNIT_1s 2
+#define TTR_UNIT_10s 3
 
 // -- normal LEDs
 #define DEVICE_OUTPUT 0            // generic output device
 #define DEVICE_LED 1            // generic LED
 #define DEVICE_PWM_LED 2         // LED on a PWM output
-// LED subtype values
-#define SUBTYPE_LEDRED 1           // One or more LEDs of the given colour
-#define SUBTYPE_LEDGRN 2
-#define SUBTYPE_LEDBLU 3
-#define SUBTYPE_LEDWHT 4
-#define SUBTYPE_LEDYEL 5
-#define SUBTYPE_LEDSFT 6        // Soft white
-#define SUBTYPE_LEDORG 7        // orange ?
+
 // LED Action values
 #define ACTION_NONE 255
 #define ACTION_RUN 1
-#define ACTION_BLNKA 2     // Blink on phase A
-#define ACTION_BLNKB 3     // Blink on phase B
+// values 2,3 not used
 #define ACTION_FLSH1 4     // Flash 1s
 #define ACTION_FLSH2 5     // Flash 0.5s
 #define ACTION_FLSH3 6     // 0.5s on, 1s off
@@ -155,15 +193,14 @@ And there are separate multiplexors for plain and PWM LEDs
 #define ACTION_FLCK2 21    // Flicker medium (2s cycle time)
 #define ACTION_FLCK3 22    // Flicker long (5s cycle time)
 // values 23 -24 not used
-#define ACTION_CYC13 25    // Cycle 1 of 3
-#define ACTION_CYC23 26    // Cycle 2 of 3
-#define ACTION_CYC33 27    // Cycle 3 of 3
-#define ACTION_CYC16 28    // As above, cycle of 6
-#define ACTION_CYC26 29
-#define ACTION_CYC36 30
-#define ACTION_CYC46 31
-#define ACTION_CYC56 32
-#define ACTION_CYC66 33
+#define ACTION_SEQ_SLOW_HEAD 30 // Start of sequence (TTR as per next device)
+#define ACTION_SEQ_SLOW 31 // sequence 2s
+#define ACTION_SEQ_MED_HEAD  32 // sequence 1s
+#define ACTION_SEQ_MED  33 // sequence 1s
+#define ACTION_SEQ_FAST_HEAD 34 // sequence 0.5s
+#define ACTION_SEQ_FAST 35 // sequence 0.5s
+
+
 
 /* Layout of RGB LED block
 
@@ -172,7 +209,7 @@ And there are separate multiplexors for plain and PWM LEDs
 +--------+---------------------+----------------------------+--------------------------+
 | 0      | Device type         | DEVICE_RGB_LED             | OFFSET_TYPE              |
 +--------+---------------------+----------------------------+--------------------------+
-| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
+| 1      | (next device)       | if part of a chain         | OFFSET_NEXT_DEVICE       |
 +--------+---------------------+----------------------------+--------------------------+
 | 2      | Device tag          |                            | OFFSET_TAG               |
 +--------+                     |                            |                          |
@@ -201,13 +238,15 @@ And there are separate multiplexors for plain and PWM LEDs
 // values 19 to 23 not used
 
 ////////////////////////////////// Shift Registers ///////////////////////////
+///// NOTE: Shift registers should be defined BEFORE the devices that use them
+//////////////////////////////////////////////////////////////////////////////
 /* Layout of shift register block
 +--------+---------------------+----------------------------+--------------------------+
 | Offset | Content             | Notes                      | Defined as               |
 +--------+---------------------+----------------------------+--------------------------+
 | 0      | Device type         | DEVICE_DIGITAL_SR          | OFFSET_TYPE              |
 +--------+---------------------+----------------------------+--------------------------+
-| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
+| 1      | (next device)       | if part of a chain         | OFFSET_NEXT_DEVICE       |
 +--------+---------------------+----------------------------+--------------------------+
 | 2      | Device tag          |                            | OFFSET_TAG               |
 +--------+                     |                            |                          |
@@ -217,7 +256,7 @@ And there are separate multiplexors for plain and PWM LEDs
 +--------+                     |                            |                          |
 | 5      |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
-| 6      | Default action      |                            | OFFSET_ACTION            |
+| 6      | No. of devices      | (Up to 4 supported)        | OFFSET_SR_NUM            |
 +--------+---------------------+----------------------------+--------------------------+
 | 7      | Data input pin      | Populate with WEP          | OFFSET_SR_DATA_PIN       |
 +--------+---------------------+----------------------------+--------------------------+
@@ -226,6 +265,21 @@ And there are separate multiplexors for plain and PWM LEDs
 | 9      | Latch Pin           | Populate with WEP          | OFFSET_SR_LATCH_PIN      |
 +--------+---------------------+----------------------------+--------------------------+
 
+SR's don't have a default action, or TTR, each indvidual connection has
+  
+  Layout of state block for SR's
+
++--------+---------------------+----------------------------+--------------------------+
+| Byte   | Content             | Notes                      | Defined                  |        
++--------+---------------------+----------------------------+--------------------------+
+|   0    | State of SR 1       |                            | STATE_SR1_MAP            |
++--------+---------------------+----------------------------+--------------------------+
+|   1    | State of SR 2       |                            | STATE_SR2_MAP            |
++--------+---------------------+----------------------------+--------------------------+
+|   2    | State of SR 3       |                            | STATE_SR3_MAP            |
++--------+---------------------+----------------------------+--------------------------+
+|   3    | State of SR 4       |                            | STATE_SR4_MAP            |
++--------+---------------------+----------------------------+--------------------------+
 */
 
 #define DEVICE_DIGITAL_SR  24       // digital output shift register
@@ -234,6 +288,12 @@ And there are separate multiplexors for plain and PWM LEDs
 #define OFFSET_SR_DATA_PIN      OFFSET_PIN1
 #define OFFSET_SR_CLOCK_PIN     OFFSET_PIN2
 #define OFFSET_SR_LATCH_PIN     OFFSET_PIN3
+#define OFFSET_SR_BLOCK 8
+#define OFFSET_SR_NUM 6
+#define STATE_SR1_MAP 0
+#define STATE_SR2_MAP 1
+#define STATE_SR3_MAP 2
+#define STATE_SR4_MAP 3
 
 // values 26-31 not used
 // -- Motors (to be done)
@@ -324,7 +384,7 @@ And there are separate multiplexors for plain and PWM LEDs
 
 #define DEVICE_INPUT 100        // Generic input device (read digital value from pin)
 #define DEVICE_ANALOG 101        // Generic input device (read analog value from pin)
-#define DEVICE_TMPHMD 110      // Temperature and humidity sensor - uses default layout
+#define DEVICE_DHT11  110      // Temperature and humidity sensor - uses default layout
 
 /* Layout of generic input block
 +--------+---------------------+----------------------------+
@@ -349,8 +409,6 @@ And there are separate multiplexors for plain and PWM LEDs
 | 008    | Device pin (*)      | Populate with WEP          |
 +--------+---------------------+----------------------------+
 | 009    | Unused              |                            |
-| to     |                     |                            |
-| 015    |                     |                            |
 +--------+---------------------+----------------------------+
 (*) Special values (virtual pins) are as follows:
 100 - 147: pins 0 to 47 of the first multiplexor
@@ -378,3 +436,94 @@ And there are separate multiplexors for plain and PWM LEDs
 #define ACTION_SMP10S 105   // sample every 10 seconds
 #define ACTION_SMP1M 106   // sample every 1 minute
 
+/* Layout of RTC EEPROM block
+
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         | DEVICE_RTC                 | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | I2C Address         |                            | OFFSET_I2C_ADDR          |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Unused              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | Unused              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+  
+  Layout of state block for RTC
+
++--------+---------------------+----------------------------+--------------------------+
+| Byte   | Content             | Notes                      | Defined                  |        
++--------+---------------------+----------------------------+--------------------------+
+|   0    | Hour value (0-23)   |                            | STATE_RTC_HOURS          |
++--------+---------------------+----------------------------+--------------------------+
+|   1    | Minute value (0-59) |                            | STATE_RTC_MINS           |
++--------+---------------------+----------------------------+--------------------------+
+|   2    | Seconds value (0-59)|                            | STATE_RTC_SECS           |
++--------+---------------------+----------------------------+--------------------------+
+|   3    | Time to run         | next state change (or 0)   | STATE_TTR                |
++--------+---------------------+----------------------------+--------------------------+
+*/
+
+#define OFFSET_I2C_ADDR  7
+#define STATE_RTC_HOURS 0
+#define STATE_RTC_MINS 1
+#define STATE_RTC_SECS 2
+
+#define ACTION_RTC_VIRTUAL 110
+
+/* Layout of DHT11 EEPROM block
+
++--------+---------------------+----------------------------+--------------------------+
+| Offset | Content             | Notes                      | Defined as               |
++--------+---------------------+----------------------------+--------------------------+
+| 0      | Device type         | DEVICE_DHT11               | OFFSET_TYPE              |
++--------+---------------------+----------------------------+--------------------------+
+| 1      | Device subtype      |                            | OFFSET_SUBTYPE           |
++--------+---------------------+----------------------------+--------------------------+
+| 2      | Device tag          |                            | OFFSET_TAG               |
++--------+                     |                            |                          |
+| 3      |                     |                            |                          |
++--------+                     |                            |                          |
+| 4      |                     |                            |                          |
++--------+                     |                            |                          |
+| 5      |                     |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 6      | Default action      |                            | OFFSET_ACTION            |
++--------+---------------------+----------------------------+--------------------------+
+| 7      | Unused              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 8      | Unused              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 9      | Unused              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+  
+  Layout of state block for DHT11
+
++--------+---------------------+----------------------------+--------------------------+
+| Byte   | Content             | Notes                      | Defined                  |        
++--------+---------------------+----------------------------+--------------------------+
+|   0    | Temperature         |                            | STATE_DHT_TMPT           |
++--------+---------------------+----------------------------+--------------------------+
+|   1    | Humidity            |                            | STATE_DHT_HMDT           |
++--------+---------------------+----------------------------+--------------------------+
+|   2    | Current action      | (see below)                | STATE_ACTION             |
++--------+---------------------+----------------------------+--------------------------+
+|   3    | Time to run         | next state change (or 0)   | STATE_TTR                |
++--------+---------------------+----------------------------+--------------------------+
+*/
+
+#define STATE_DHT_TMPT 0
+#define STATE_DHT_HMDT 1

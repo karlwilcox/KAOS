@@ -11,21 +11,7 @@
 #define FLAG_AUTO_OUTPUTS   0x02
 // Automatically run all input processing as per device actions
 #define FLAG_AUTO_INPUTS    0x04
-#define FLAG_DHT_FAIL       0x10
 
 
 #define MAX_DEVICES 32
-
-
-typedef union {
-    byte bytes[4];
-    uint32_t bits;
-} bytes4;
-
-typedef struct {
-    bytes4 state;
-    unsigned int block;
-    unsigned int numRegisters;
-} shiftRegister;
-
 #endif

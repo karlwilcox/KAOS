@@ -5,7 +5,8 @@ void blink();
 void flash(unsigned int action);
 void sampleInputs(unsigned int action);
 void updateLCD();
-void myDigitalWrite(unsigned int pin, unsigned int value);
-void writeDSR(shiftRegister *sr);
+void writeDSR(unsigned int block);
+byte doAction(unsigned int block);
+void updateValue(unsigned int block, byte value);
 
 #endif // !ACTIONS_H
