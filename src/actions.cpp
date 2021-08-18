@@ -16,32 +16,24 @@ extern byte deviceActions[];
 
 extern byte deviceStates[];
 
-extern int temperature, humidity, hours, minutes;
 extern SimpleDHT11 *dht11;
 extern char lcdLine0[], lcdLine1[];
 extern LiquidCrystal *lcd;
 
-void sampleInputs(unsigned int rate) {
-    unsigned int devBlock;   // skip past device 0, that is the board itself
-    unsigned int pin;
-
-    for (devBlock = 1; devBlock < MAX_DEVICES; devBlock++) {
-        if (!(deviceActions[devBlock] == (byte)rate)) {
-            continue;
-        }
-        switch (EEPROM.read((devBlock * EEPROM_BLOCK_SIZE) + OFFSET_TYPE)) {
-            case DEVICE_DHT11:    // temperature & humidity
-                // Serial.println("Read DHT");
-                pin = EEPROM.read((devBlock * EEPROM_BLOCK_SIZE) + OFFSET_PIN1);
-                if (dht11->read(pin, (byte*)&temperature, (byte *)&humidity, NULL)) {
-                    ; //lags |= FLAG_DHT_FAIL;
-                } else {
-                    ; //flags &= ~FLAG_DHT_FAIL;
-                }
-                break;
-            default:
-                break;
-        }
+void doSample(unsigned int block) {
+    switch (eepromRead(block,OFFSET_TYPE)) {
+        case DEVICE_INPUT:
+            stateWrite(block, STATE_VALUE, digitalRead(eepromRead(block, OFFSET_PIN1)));
+            break;
+        case DEVICE_ANALOG:
+            stateWrite(block, STATE_VALUE, analogRead(eepromRead(block, OFFSET_PIN1)));
+            break;
+        case DEVICE_DHT11:
+            dht11->read(eepromRead(block,OFFSET_PIN1), statePtr(block, STATE_DHT_TMPT),
+                        statePtr(block, STATE_DHT_HMDT), NULL);
+            break;
+        default:
+            break;
     }
 }
 
@@ -49,19 +41,25 @@ void writeDSR(unsigned int block) {
     // how many shift registers are cascaded here?
     unsigned int numSRs = eepromRead(block, OFFSET_SR_NUM);
     // enable loading data
-    digitalWrite(EEPROM.read(eepromRead(block,OFFSET_SR_LATCH_PIN)), LOW);
+    digitalWrite(eepromRead(block,OFFSET_SR_LATCH_PIN), LOW);
     // for each register, write out the state value
     do {
         shiftOut(eepromRead(block, OFFSET_SR_DATA_PIN), eepromRead(block, OFFSET_SR_CLOCK_PIN),
                  MSBFIRST, stateRead(block,STATE_SR1_MAP + numSRs - 1));
     } while (--numSRs > 0);
     // disable loading data
-    digitalWrite(EEPROM.read(eepromRead(block,OFFSET_SR_LATCH_PIN)), HIGH);
+    digitalWrite(eepromRead(block,OFFSET_SR_LATCH_PIN), HIGH);
 }
 
 void updateValue(unsigned int block, byte value) {
     unsigned int pin, SR_block;
     switch (eepromRead(block,OFFSET_TYPE)) {
+        case DEVICE_PWM_LED:
+            pin = eepromRead(block,OFFSET_PIN1);
+            if (value == 1) value = 255;
+            analogWrite(pin, value);
+            stateWrite(block, STATE_VALUE, value);
+            break;
         case DEVICE_LED:
         case DEVICE_OUTPUT:
             pin = eepromRead(block,OFFSET_PIN1);
@@ -69,15 +67,27 @@ void updateValue(unsigned int block, byte value) {
                 digitalWrite(pin, value);
             } else { // this is a pin on a shift register
                 SR_block = eepromRead(block, OFFSET_SR_BLOCK);
-                pin -=101;
-                if (pin < 9) { // 8 pins on first SR
-                    stateBitSet(SR_block, STATE_SR1_MAP,1 << (pin - 1));
-                } else if (pin < 17) {
-                    stateBitSet(SR_block, STATE_SR2_MAP,1 << (pin - 9));
-                } else if (pin < 25) {
-                    stateBitSet(SR_block, STATE_SR3_MAP,1 << (pin - 17));
+                pin -=101; // convert pins 1 to 8 to bits 0-7
+                if (value >= 1) {
+                    if (pin < 8) { // 8 pins on first SR
+                        stateBitSet(SR_block, STATE_SR1_MAP,1 << pin);
+                    } else if (pin < 16) {
+                        stateBitSet(SR_block, STATE_SR2_MAP,1 << (pin - 8));
+                    } else if (pin < 24) {
+                        stateBitSet(SR_block, STATE_SR3_MAP,1 << (pin - 16));
+                    } else {
+                        stateBitSet(SR_block, STATE_SR4_MAP,1 << (pin - 24));
+                    }
                 } else {
-                    stateBitSet(SR_block, STATE_SR4_MAP,1 << (pin - 25));
+                    if (pin < 8) { // 8 pins on first SR
+                        stateBitClear(SR_block, STATE_SR1_MAP,1 << pin);
+                    } else if (pin < 16) {
+                        stateBitClear(SR_block, STATE_SR2_MAP,1 << (pin - 8));
+                    } else if (pin < 24) {
+                        stateBitClear(SR_block, STATE_SR3_MAP,1 << (pin - 16));
+                    } else {
+                        stateBitClear(SR_block, STATE_SR4_MAP,1 << (pin - 24));
+                    }
                 }
                 writeDSR(SR_block);
             }
@@ -177,7 +187,7 @@ The rest is still unwritten * ";
 
 
 void updateLCD() { // we are called every 1/4 second, 
-    static int count = 0;
+/*    static int count = 0;
     static unsigned int curPos = 0;
     char temp[10];
 
@@ -221,96 +231,160 @@ void updateLCD() { // we are called every 1/4 second,
     lcd->setCursor(0,0);
     lcd->print(lcdLine0);
     lcd->setCursor(0,1);
-    lcd->print(lcdLine1);
+    lcd->print(lcdLine1); */
 }
 
 // A timer has expired, so do the required action and return a new time value
 byte doAction(unsigned int block) {
-    // unsigned int t; // temporary store
+    unsigned int t1, t2; // temporary store
     byte b; // temporary store
     // default new value is just 0, no further action
     byte retval = 0;
     // Almost always need the current value, so get it
     byte value = stateRead(block, STATE_VALUE);
 
-    // some devices are always handled the same way
-    if (eepromRead(block,OFFSET_TYPE) == DEVICE_RTC) {
-        if (++stateRead(block,STATE_RTC_SECS) >= 60) {
-            stateWrite(block,STATE_RTC_SECS,0);
-            if (++stateRead(block,STATE_RTC_MINS) >= 60) {
-                stateWrite(block,STATE_RTC_MINS,0);
-                if (++stateRead(block,STATE_RTC_HOURS) >= 24) {
-                    stateWrite(block,STATE_RTC_HOURS,0);
-                }
-            }
-        } 
-        return (1 | (TTR_UNIT_1s << 6));
-    }
-
     // What action do we need to do?
     switch(stateRead(block, STATE_ACTION)) {
-        case ACTION_FLSH1: 
-            value = value >= 1? 0 : 1;
-            updateValue(block, value);
-            retval = 1 | (TTR_UNIT_1s << 6);
+        case ACTION_UPDATE_LCD:
             break;
-        case ACTION_FLSH2: 
-            value = value >= 1? 0 : 1;
-            updateValue(block, value);
-            retval = 5 | (TTR_UNIT_100ms << 6);
+        case ACTION_RTC_VIRTUAL:
+            if (++stateRead(block,STATE_RTC_SECS) >= 60) {
+                stateWrite(block,STATE_RTC_SECS,0);
+                if (++stateRead(block,STATE_RTC_MINS) >= 60) {
+                    stateWrite(block,STATE_RTC_MINS,0);
+                    if (++stateRead(block,STATE_RTC_HOURS) >= 24) {
+                        stateWrite(block,STATE_RTC_HOURS,0);
+                    }
+                }
+            } 
+            retval = stateRead(block, STATE_TTR);
             break;
-        case ACTION_FLSH3:
-            if (value >= 1) {
-                value = 0;
-                retval = 1 | (TTR_UNIT_1s < 6);
+        case ACTION_CTRL_SET_ACTION:
+            b = eepromRead(block,OFFSET_CTRL_DEVICE);
+            if (stateRead(block,STATE_VALUE) == LOW) { // target device is off
+                stateWrite(b, STATE_ACTION, eepromRead(b,OFFSET_ACTION));
+                stateWrite(b, STATE_TTR, eepromRead(b,OFFSET_TTR));
+                stateWrite(block,STATE_VALUE,HIGH);
             } else {
-                value = 1;
-                retval = 5 | (TTR_UNIT_100ms << 6);
+                stateWrite(b,STATE_ACTION,0); // turn off target device
+                stateWrite(block,STATE_VALUE,LOW);
+            }
+            retval = (random(eepromRead(block,OFFSET_CTRL_MIN_TIME),
+                                        eepromRead(block,OFFSET_CTRL_MAX_TIME)) | (TTR_UNIT_10s << 6));
+            break;
+        case ACTION_FLASH: 
+            b = eepromRead(block, OFFSET_FLASH_TTR);
+            // upper 4 bits are on time (x 300ms)
+            // lower 4 bits are off time (x 300ms)
+            if (value >= 1) { // device is currently ON
+                // turn device off
+                value = LOW;
+                // return off TTR
+                retval = ((b & 0b00001111) *3) | (TTR_UNIT_100ms << 6);
+            } else { // device is currently OFF
+                // turn device ON
+                value = HIGH;
+                // return on TTR
+                retval = ((b >> 4) *3) | (TTR_UNIT_100ms << 6);
             }
             updateValue(block, value);
             break;
-        case ACTION_FLCK1:
+        case ACTION_FLICKER:
+            b = eepromRead(block, OFFSET_FLICKER_MAXMIN);
+            t1 = 255 * (((b >> 4) * 10 ) / 100); // max value
+            t2 = 255 * (((b & 0b00001111) * 10) / 100); // min value;
+            // safety checks
+            if (t1 == t2 || abs(t2 - t1) < 50) { // nonsense values
+                t2 = 0; t1 = 255;
+            } else if (t2 > t1) { // wrong way around
+                b = (byte)t1; t1 = t2; t2 = b;
+            }
+            do {
+                b = (byte)random(t2,t1);
+                // don't allow jumps bigger than half
+            } while (abs(stateRead(block, STATE_VALUE) - b) > (abs(t2 - t1)/ 2));
+            updateValue(block,b);
+            retval = random(10,50) | (stateRead(block, STATE_TTR) & 0b11000000);
             break;
-        case ACTION_RND2S:
-            if (value >= 1) { // on, so long time off
+        case ACTION_PULSE:
+            t1 = stateRead(block, STATE_VALUE);
+            b = eepromRead(block, OFFSET_DELTA);
+            if (b == 0) b = 1; // slow pulse
+            if (stateRead(block, STATE_PULSE_UP)) { // going up: Lady's wear, garden furniture...
+                t1 += b;
+                if (t1 > 255) {
+                    t1 = 255;
+                    stateWrite(block, STATE_PULSE_UP, 0);
+                }
+            } else { // going down: menswear, pet food...
+                if (t1 < b) {
+                    t1 = 0;
+                    stateWrite(block, STATE_PULSE_UP, 1);
+                } else {
+                    t1 -= b;
+                }
+            }
+            updateValue(block,(byte)t1);
+            retval = stateRead(block, STATE_TTR);
+            break;        
+        case ACTION_FADE_IN:
+            retval = stateRead(block, STATE_TTR);
+            t1 = stateRead(block, STATE_VALUE);
+            b = eepromRead(block, OFFSET_DELTA);
+            if (b == 0) b = 1; // slow rise
+            t1 += b;
+            if (t1 > 255) {
+                t1 = 255;
+                stateWrite(block, STATE_ACTION, DEVICE_ON);
+                retval = 0;
+            }
+            updateValue(block,(byte)t1);
+            break;    
+         case ACTION_FADE_OUT:
+            retval = stateRead(block, STATE_TTR);
+            t1 = stateRead(block, STATE_VALUE);
+            b = eepromRead(block, OFFSET_DELTA);
+            if (b == 0) b = 1; // slow fade
+            if (t1 < b) {
+                t1 = 0;
+                stateWrite(block, STATE_ACTION, DEVICE_OFF);
+                retval = 0;
+            } else {
+                t1 -= b;
+            }
+            updateValue(block,(byte)t1);
+            break;
+        case ACTION_RANDOM:
+            b = eepromRead(block, OFFSET_RANDOM_TTR);
+            t1 = ((b >> 4) * 10) % 100; // duty cycle
+            t2 = (b & 0b00001111) * 10; // max length, in seconds
+            if (value >= 1) { // on
                 value = 0;
-                retval = random(2,12) | (TTR_UNIT_1s << 6);
-            } else { // off, so on for short time 
+                retval = random(1,(t1 / 100 * t2)) | (TTR_UNIT_1s << 6);
+            } else { // off
                 value = 1;
-                retval = random(5,30) | (TTR_UNIT_100ms << 6);
+                retval = random(1,(100 - t1)/100 * t2) | (TTR_UNIT_1s << 6);
             }
             updateValue(block, value);
             break;
-        case ACTION_SEQ_FAST:
-        case ACTION_SEQ_FAST_HEAD:
+        case ACTION_SEQ:
+        case ACTION_SEQ_HEAD:
             // timer has expired, so move on to next in sequence
             b = eepromRead(block,OFFSET_NEXT_DEVICE);
             if (b > 0) { // zero marks ends of chain, so just stop
                 // otherwise turn on new device
-                updateValue(b, value);
+                updateValue(b, HIGH);
                 // and set its new timer value
-                stateWrite(b, STATE_TTR, 5 | (TTR_UNIT_100ms << 6));
+                stateWrite(b, STATE_TTR, eepromRead(b, OFFSET_TTR));
             }
             // turn off current device
-            updateValue(block, value);
+            updateValue(block, LOW);
             // timer for this device is zero
-        case ACTION_SEQ_MED:
-        case ACTION_SEQ_MED_HEAD:
-            b = eepromRead(block,OFFSET_NEXT_DEVICE);
-            if (b > 0) { 
-                updateValue(b, value);
-                stateWrite(b, STATE_TTR, 1 | (TTR_UNIT_1s << 6));
-            }
-            updateValue(block, value);
+            // which is the default return value
             break;
-        case ACTION_SEQ_SLOW:
-        case ACTION_SEQ_SLOW_HEAD:
-            b = eepromRead(block,OFFSET_NEXT_DEVICE);
-            if (b > 0) { 
-                updateValue(b, value);
-                stateWrite(b, STATE_TTR, 2 | (TTR_UNIT_1s << 6));
-            }
-            updateValue(block, value);
+        case ACTION_SAMPLE:
+            doSample(block);
+            retval = eepromRead(block, OFFSET_TTR);
             break;
         default:
             break;

@@ -101,8 +101,9 @@ void monitorRun() {
                 // ACT.tttt - Return current action for device with tag tttt
     CMD_WBS,    // WBS.aaaa - Write byte sequence off following lines until space
     CMD_WSB,    // WSB.aaaa.vvv write state byte aaaa with value vvv
+    CMD_TTR,    // TTR.tttt.vvv set time to run of device with tag tttt to value vvv
     };
-    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACTWBS";
+    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACTWBSTTR";
     enum tags { // Note these are effectively RESERVED tag names and should NOT be used
                 // for LEDs or other devices. Values are read/write unless shown otherwise
     TAG_NONE,   // No built in value
@@ -122,7 +123,7 @@ void monitorRun() {
     enum cmds cmdVal = CMD_BAD;
     enum tags tagVal = TAG_NONE;
     char temp[6], c;
-    unsigned int addr;
+    unsigned int addr, t1;
     int block;
 
     // First, check if we are in the middle of writing a byte stream...
@@ -175,6 +176,13 @@ void monitorRun() {
             break;
         case CMD_WBS:
             byteAddr = atoi(arg);
+            break;
+        case CMD_TTR:
+            if ((block = findDevice(arg)) == 0) {
+                strcpy_P(monitorBuffer,badTag);
+            } else { // should be one of our defined names
+               stateWrite(block, STATE_TTR, atoi(val));
+            }
             break;
         case CMD_WHO:
             sprintf(monitorBuffer,f_03d,EEPROM.read(ADDRESS_UNIT_ID));
@@ -272,16 +280,18 @@ void monitorRun() {
             if ((block = findDevice(arg)) == 0) {
                 strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                addr = atoi(val); // not really address, just reusing variable
-                if (addr == 0) { // read request
+                t1 = atoi(val);
+                if (t1 == 0) { // read request
                     sprintf(monitorBuffer,f_03d,(int)stateRead(block,STATE_ACTION));
                 } else { // write request
-                    stateWrite(block,STATE_ACTION,(byte)addr);
+                    stateWrite(block,STATE_ACTION,(byte)t1);
                     // if this is just plain on or off, make sure it is actioned
-                    if (addr == DEVICE_ON) {
+                    if (t1 == DEVICE_ON) {
                         updateValue(block, 1);
-                    } else if (addr == DEVICE_OFF || addr == 0) {
+                    } else if (t1 == DEVICE_OFF) {
                         updateValue(block, 0);
+                    } else { // trigger action as soon as possible
+                        stateWrite(block,STATE_TTR,1); // 10ms
                     }
                 }
             }
@@ -289,6 +299,24 @@ void monitorRun() {
         case CMD_WEB: // Write EEPROM byte
         case CMD_WEP: // write EEPROM pin value
             addr = atoi(arg);
+            if (!isdigit(arg[3])) { // write to state
+                t1 = atoi(val);
+                switch(tolower(arg[3])) {
+                    case 'a':
+                        stateWrite(addr * 4,0,(byte)t1);
+                        break;
+                    case 'b':
+                        stateWrite(addr * 4,1,(byte)t1);
+                        break;
+                    case 'c':
+                        stateWrite(addr * 4,2,(byte)t1);
+                        break;
+                    case 'd':
+                        stateWrite(addr * 4,3,(byte)t1);
+                        break;
+                }
+                break;
+            }
             if (addr == 0) {
                 strcpy_P(monitorBuffer, badAddr);
             } else {
@@ -308,7 +336,7 @@ void monitorRun() {
             sprintf(monitorBuffer,f_03d,EEPROM.read(atoi(arg)));
             break;
         case CMD_WET: // Write EEPROM tag
-            addr = atoi(arg);
+            addr = atoi(arg) * EEPROM_BLOCK_SIZE;
             if (addr == 0) {
                 strcpy_P(monitorBuffer, badAddr);
             } else {
@@ -332,23 +360,23 @@ void monitorRun() {
             break;
         case CMD_DMP:
 #ifdef MONITOR_DEBUG
-            addr = atoi(arg);
-            addr *= EEPROM_BLOCK_SIZE; // convert block no. to absolute address
-            Serial.print("     ");
+            addr = atoi(arg); // addr holds starting block no.
+            t1 = addr * EEPROM_BLOCK_SIZE; // convert block no. to absolute address
+            Serial.print("    ");
             for (int i = 0; i < EEPROM_BLOCK_SIZE; i++) {
                 sprintf(temp,f_03d,i);
                 Serial.print(temp);
             }
-            Serial.println(" ");
+            Serial.println(F("                A    B    C    D"));
             for (int j = 0; j < 8; j++) {
-                sprintf(temp,"%04u ", addr+(EEPROM_BLOCK_SIZE*j));
+                sprintf(temp,"%03u ", (t1+(EEPROM_BLOCK_SIZE*j))/10);
                 Serial.print(temp);
                 for (int i = 0; i < EEPROM_BLOCK_SIZE; i++) {
-                    sprintf(temp,f_03d,EEPROM.read(addr+(EEPROM_BLOCK_SIZE*j)+i));
+                    sprintf(temp,f_03d,EEPROM.read(t1+(EEPROM_BLOCK_SIZE*j)+i));
                     Serial.print(temp);
                 }
                 for (int i = 0; i < EEPROM_BLOCK_SIZE; i++) {
-                    c = EEPROM.read(addr+(EEPROM_BLOCK_SIZE*j)+i);
+                    c = EEPROM.read(t1+(EEPROM_BLOCK_SIZE*j)+i);
                     if (isalnum(c)) {
                         Serial.print(c);
                     } else {
@@ -357,7 +385,7 @@ void monitorRun() {
                     Serial.print(" ");
                 }
                 for (int i = 0; i < STATE_BLOCK_SIZE; i++) {
-                    sprintf(temp,f_03d,stateRead(j,i));
+                    sprintf(temp,f_03d,stateRead(addr + j,i));
                     Serial.print(temp);
                 }
                 Serial.print('\n');

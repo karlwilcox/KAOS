@@ -21,7 +21,7 @@ const char line1Default[] PROGMEM = "Hello World...  ";
 
 void setupDevices() {
     unsigned int block = 1;   // skip past device 0, that is the board itself
-    byte deviceType, deviceAction, deviceTTR;
+    byte deviceType, deviceAction, deviceTTR, onValue = HIGH;
     while ((deviceType = EEPROM.read(block * EEPROM_BLOCK_SIZE)) != DEVICE_END) {
         deviceAction = ACTION_NONE;
         deviceTTR = 1; // 10ms, run as soon as possible
@@ -29,6 +29,9 @@ void setupDevices() {
             case DEVICE_CONT:       // extra data, should already have been used
             case DEVICE_DELETED:    // deleted device, but more to come
                 break;
+            case DEVICE_PWM_LED:
+                onValue = 255;
+                // Flow Through 
             case DEVICE_OUTPUT:
             case DEVICE_LED:        // generic output or led are treated the same
                 pinMode(eepromRead(block,OFFSET_PIN1),OUTPUT);
@@ -37,28 +40,21 @@ void setupDevices() {
                     // simple cases
                     case DEVICE_ON: 
                     case DEVICE_OFF: 
-                        updateValue(block,deviceAction == DEVICE_ON? 1 : 0);
+                        updateValue(block,deviceAction == DEVICE_ON? onValue : 0);
                         deviceTTR = 0;
                         break;
                     // these all are off to start with, no timer
-                    case ACTION_SEQ_FAST:
-                    case ACTION_SEQ_MED:
-                    case ACTION_SEQ_SLOW:
+                    case ACTION_SEQ:
                         updateValue(block,  0);
                         deviceTTR = 0;
                         break;
                     // switch sequence heads on, and set their timers
-                    case ACTION_SEQ_FAST_HEAD:
-                        updateValue(block,  1);
-                        deviceTTR = 5 | (TTR_UNIT_100ms << 6);
+                    case ACTION_SEQ_HEAD:
+                        updateValue(block,  onValue);
+                        deviceTTR = eepromRead(block, OFFSET_TTR);
                         break;
-                    case ACTION_SEQ_MED_HEAD:
-                        updateValue(block,  1);
-                        deviceTTR = 1 | (TTR_UNIT_1s << 6);
-                        break;
-                    case ACTION_SEQ_SLOW_HEAD:
-                        updateValue(block,  1);
-                        deviceTTR = 2 | (TTR_UNIT_1s << 6);
+                    case ACTION_FADE_OUT:
+                        updateValue(block, 255);
                         break;
                     // other actions we can just leave to run as soon as possible
                     default:
@@ -71,7 +67,8 @@ void setupDevices() {
                 break;
             case DEVICE_DHT11:
                 dht11 = new SimpleDHT11();
-                deviceAction = EEPROM.read((block * EEPROM_BLOCK_SIZE) + OFFSET_ACTION);
+                deviceAction = eepromRead(block, OFFSET_ACTION);
+                deviceTTR = eepromRead(block, OFFSET_TTR);
                 break;
             case DEVICE_LCD:
                 lcd = new LiquidCrystal(EEPROM_ADDRESS(block,OFFSET_LCDRS),
@@ -103,7 +100,15 @@ void setupDevices() {
             case DEVICE_RTC:
                 if (eepromRead(block, OFFSET_ACTION) == ACTION_RTC_VIRTUAL) {
                     deviceTTR = 1 | (TTR_UNIT_1s << 6);
+                    stateWrite(block, STATE_RTC_HOURS, 18);
+                    stateWrite(block, STATE_RTC_MINS, 0);
+                    stateWrite(block, STATE_RTC_SECS, 0);
                 } // fake a real time clock by counting seconds
+                break;
+            case DEVICE_CONTROLLER:
+                stateWrite(block,STATE_VALUE, LOW);
+                stateWrite(block, STATE_TTR, (random(eepromRead(block,OFFSET_CTRL_MIN_TIME),
+                                            eepromRead(block,OFFSET_CTRL_MAX_TIME)) | (TTR_UNIT_10s << 6)));
                 break;
             default:
                 break;
@@ -151,6 +156,7 @@ void getDevice(unsigned int block) {
                             stateRead(block, STATE_SR4_MAP));
             break;
         case DEVICE_LED:
+        case DEVICE_PWM_LED:
         case DEVICE_OUTPUT:
             sprintf(monitorBuffer, f_03d, stateRead(block,STATE_VALUE));
             break;
