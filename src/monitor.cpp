@@ -99,11 +99,11 @@ void monitorRun() {
     CMD_WEP,    // WEP.aaaa.ppp - write value of pin ppp to EEPROM address aaaa
     CMD_ACT,    // ACT.tttt.vvv - Set current action for device tttt to vvv (255 to turn off)
                 // ACT.tttt - Return current action for device with tag tttt
-    CMD_WBS,    // WBS.aaaa - Write byte sequence off following lines until space
-    CMD_WSB,    // WSB.aaaa.vvv write state byte aaaa with value vvv
-    CMD_TTR,    // TTR.tttt.vvv set time to run of device with tag tttt to value vvv
+    CMD_WES,    // WBS.aaaa - Write byte sequence off following lines to eeprom until space
+    CMD_WSS,    // WSB.aaaa write byte sequence off following lines to state until space
+   // CMD_TTR,    // TTR.tttt.vvv set time to run of device with tag tttt to value vvv
     };
-    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACTWBSTTR";
+    const static char commands[] PROGMEM = "BADSAYALLRUNWEBREBWHORSTWETRETSETGETDMPWEPACTWESWSS";
     enum tags { // Note these are effectively RESERVED tag names and should NOT be used
                 // for LEDs or other devices. Values are read/write unless shown otherwise
     TAG_NONE,   // No built in value
@@ -119,21 +119,34 @@ void monitorRun() {
     // TAG_BORD,   // Board identity (read only)
     };
     const static char taglist[] PROGMEM = "NONESEEDHOURMINSFLAGALLLALLDTMPTHMDT";
-    static unsigned int byteAddr = 0;
+    static unsigned int eepromAddr = 0;
+    static unsigned int stateAddr = 0;
     enum cmds cmdVal = CMD_BAD;
     enum tags tagVal = TAG_NONE;
     char temp[6], c;
     unsigned int addr, t1;
     int block;
 
-    // First, check if we are in the middle of writing a byte stream...
-    if (byteAddr > 0) { // read data as a byte, write to current address
+    // First, check if we are in the middle of writing a byte stream to eeprom...
+    if (eepromAddr > 0) { // read data as a byte, write to current address
         if (monitorBuffer[0] == ' ') {
-            byteAddr = 0; // read no more bytes
+            eepromAddr = 0; // read no more bytes
         } else {
             // otherwise,
             addr = atoi(monitorBuffer); // used a temp value, not address
-            EEPROM.write(byteAddr++, (byte)addr);
+            EEPROM.write(eepromAddr++, (byte)addr);
+            monitorBuffer[0] = '\0';
+        }
+        return;
+    }
+    // Then, check if we are in the middle of writing a byte stream to state...
+    if (stateAddr > 0) { // read data as a byte, write to current address
+        if (monitorBuffer[0] == ' ') {
+            stateAddr = 0; // read no more bytes
+        } else {
+            // otherwise,
+            addr = atoi(monitorBuffer); // used a temp value, not address
+            deviceStates[stateAddr++] = (byte)addr;
             monitorBuffer[0] = '\0';
         }
         return;
@@ -174,15 +187,11 @@ void monitorRun() {
         case CMD_BAD:
             strcpy_P(monitorBuffer, badCmd);
             break;
-        case CMD_WBS:
-            byteAddr = atoi(arg);
+        case CMD_WES:
+            eepromAddr = atoi(arg);
             break;
-        case CMD_TTR:
-            if ((block = findDevice(arg)) == 0) {
-                strcpy_P(monitorBuffer,badTag);
-            } else { // should be one of our defined names
-               stateWrite(block, STATE_TTR, atoi(val));
-            }
+        case CMD_WSS:
+            stateAddr = atoi(arg);
             break;
         case CMD_WHO:
             sprintf(monitorBuffer,f_03d,EEPROM.read(ADDRESS_UNIT_ID));
@@ -206,23 +215,23 @@ void monitorRun() {
                     case TAG_HOUR:
                         addr = atoi(val);
                         if (addr > 23) addr = 0;
-                        if ((block = findDevice(tag_rtc)) != 0) 
+                        if ((block = stateRead(DEVICE_BOARD, STATE_RTC_BLOCK) != 0 ) && block != 255) 
                             stateWrite(block,STATE_RTC_HOURS,addr);
                         break;
                     case TAG_MINS:
                         addr = atoi(val);
                         if (addr > 59) addr = 0;
-                        if ((block = findDevice(tag_rtc)) != 0)  {
+                        if ((block = stateRead(DEVICE_BOARD, STATE_RTC_BLOCK) != 0 ) && block != 255)  {
                             stateWrite(block,STATE_RTC_HOURS,addr);
                             stateWrite(block,STATE_RTC_SECS,0);
                         }
                         break;
                     case TAG_TMPT:
-                        if ((block = findDevice(tag_dht11)) != 0) 
+                        if ((block = stateRead(DEVICE_BOARD, STATE_DHT_BLOCK) != 0 ) && block != 255) 
                             stateWrite(block, STATE_DHT_TMPT, atoi(val));
                         break;
                     case TAG_HMDT:
-                        if ((block = findDevice(tag_dht11)) != 0) 
+                        if ((block = stateRead(DEVICE_BOARD, STATE_DHT_BLOCK) != 0 ) && block != 255) 
                             stateWrite(block, STATE_DHT_HMDT, atoi(val));
                         break;
                     default:
@@ -231,12 +240,10 @@ void monitorRun() {
             } else if ((block = findDevice(arg)) == 0) {
                 strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                updateValue(block, atoi(val));
-            }
+                setDevice(block, atoi(val)); 
+            }                    
             break;
         case CMD_GET:
-            // set a default message
-            strcpy_P(monitorBuffer,badTag);
             // Is this tag a reserved name?
             if (tagVal != TAG_NONE) {
                 switch (tagVal) {
@@ -244,20 +251,24 @@ void monitorRun() {
                         sprintf(monitorBuffer,f_03d,stateRead(DEVICE_BOARD,STATE_FLAG));
                         break;
                     case TAG_HOUR:
-                        if ((block = findDevice(tag_rtc)) != 0) 
-                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_RTC_HOURS));
+                        t1 = stateRead(DEVICE_BOARD, STATE_RTC_BLOCK);
+                        if (t1 != 0 && t1 != 255)
+                            sprintf(monitorBuffer,f_03d,stateRead(t1,STATE_PARAM1));
                         break;
                     case TAG_MINS:
-                        if ((block = findDevice(tag_rtc)) != 0) 
-                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_RTC_MINS));
+                        t1 = stateRead(DEVICE_BOARD, STATE_RTC_BLOCK);
+                        if (t1 != 0 && t1 != 255)
+                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_PARAM2));
                         break;
                     case TAG_TMPT:
-                        if ((block = findDevice(tag_dht11)) != 0) 
-                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_DHT_TMPT));
+                        t1 = stateRead(DEVICE_BOARD, STATE_DHT_BLOCK);
+                        if (t1 != 0 && t1 != 255)
+                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_PARAM1));
                         break;
                     case TAG_HMDT:
-                        if ((block = findDevice(tag_dht11)) != 0) 
-                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_DHT_HMDT));
+                        t1 = stateRead(DEVICE_BOARD, STATE_DHT_BLOCK);
+                        if (t1 != 0 && t1 != 255)
+                            sprintf(monitorBuffer,f_03d,stateRead(block,STATE_PARAM2));
                         break;
                     default:
                         break;
@@ -265,7 +276,7 @@ void monitorRun() {
             } else if ((block = findDevice(arg)) == 0) {
                     strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                getDevice(block);
+                getDevice(block); 
             }
             break;
         case CMD_SAY: // echo
@@ -280,20 +291,7 @@ void monitorRun() {
             if ((block = findDevice(arg)) == 0) {
                 strcpy_P(monitorBuffer,badTag);
             } else { // should be one of our defined names
-                t1 = atoi(val);
-                if (t1 == 0) { // read request
-                    sprintf(monitorBuffer,f_03d,(int)stateRead(block,STATE_ACTION));
-                } else { // write request
-                    stateWrite(block,STATE_ACTION,(byte)t1);
-                    // if this is just plain on or off, make sure it is actioned
-                    if (t1 == DEVICE_ON) {
-                        updateValue(block, 1);
-                    } else if (t1 == DEVICE_OFF) {
-                        updateValue(block, 0);
-                    } else { // trigger action as soon as possible
-                        stateWrite(block,STATE_TTR,1); // 10ms
-                    }
-                }
+                setupDevice(block, atoi(val));
             }
             break;
         case CMD_WEB: // Write EEPROM byte
@@ -303,48 +301,41 @@ void monitorRun() {
                 t1 = atoi(val);
                 switch(tolower(arg[3])) {
                     case 'a':
-                        stateWrite(addr * 4,0,(byte)t1);
+                        stateWrite(addr,0,(byte)t1);
                         break;
                     case 'b':
-                        stateWrite(addr * 4,1,(byte)t1);
+                        stateWrite(addr,1,(byte)t1);
                         break;
                     case 'c':
-                        stateWrite(addr * 4,2,(byte)t1);
+                        stateWrite(addr,2,(byte)t1);
                         break;
                     case 'd':
-                        stateWrite(addr * 4,3,(byte)t1);
+                        stateWrite(addr,3,(byte)t1);
+                        break;
+                    case 'e':
+                        stateWrite(addr,4,(byte)t1);
+                        break;
+                    case 'f':
+                        stateWrite(addr,5,(byte)t1);
                         break;
                 }
                 break;
             }
-            if (addr == 0) {
-                strcpy_P(monitorBuffer, badAddr);
+            if (cmdVal == CMD_WEB) {
+                EEPROM.write(addr,atoi(val));
             } else {
-                if (cmdVal == CMD_WEB) {
-                    EEPROM.write(addr,atoi(val));
-                } else {
-                    EEPROM.write(addr,str2pin(tolower(val[0]),val[1],val[2]));
-                }
+                EEPROM.write(addr,str2pin(tolower(val[0]),val[1],val[2]));
             }
-            break;
-        case CMD_WSB:
-            addr = atoi(arg);
-            if (addr < MAX_DEVICES * 4)
-                deviceStates[addr] = (byte)(atoi(val));
             break;
         case CMD_REB: // Read EEPROM byte
             sprintf(monitorBuffer,f_03d,EEPROM.read(atoi(arg)));
             break;
         case CMD_WET: // Write EEPROM tag
             addr = atoi(arg) * EEPROM_BLOCK_SIZE;
-            if (addr == 0) {
-                strcpy_P(monitorBuffer, badAddr);
-            } else {
-                EEPROM.write(addr,val[0]);
-                EEPROM.write(addr+1,val[1]);
-                EEPROM.write(addr+2,val[2]);
-                EEPROM.write(addr+3,val[3]);
-            }
+            EEPROM.write(addr,val[0]);
+            EEPROM.write(addr+1,val[1]);
+            EEPROM.write(addr+2,val[2]);
+            EEPROM.write(addr+3,val[3]);
             break;
         case CMD_RET: // Read EEPROM tag
             addr = atoi(arg);
@@ -367,7 +358,7 @@ void monitorRun() {
                 sprintf(temp,f_03d,i);
                 Serial.print(temp);
             }
-            Serial.println(F("                A    B    C    D"));
+            Serial.println(F("                A    B    C    D    E    F"));
             for (int j = 0; j < 8; j++) {
                 sprintf(temp,"%03u ", (t1+(EEPROM_BLOCK_SIZE*j))/10);
                 Serial.print(temp);

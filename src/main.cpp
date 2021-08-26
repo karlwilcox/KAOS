@@ -18,14 +18,14 @@ SimpleDHT11 *dht11;
 LiquidCrystal *lcd = NULL;
 char lcdLine0[17];
 char lcdLine1[17];
-unsigned int ticks20ms = 0, ticks100ms = 0, ticks1s = 0, ticks10s = 0;
+unsigned int  ticks100ms = 0, ticks1s = 0, ticks10s = 0;
 
 
 void setup(){
   Serial.begin(9600);
   setupDevices();
   // set the default flag state
-  stateWrite(DEVICE_BOARD, STATE_FLAG, eepromRead(DEVICE_BOARD, ADDRESS_FLAG));
+  stateWrite(DEVICE_BOARD, STATE_FLAG, eepromRead(DEVICE_BOARD, EEPROM_FLAG));
 }
 
 void loop(){
@@ -35,7 +35,6 @@ void loop(){
   }
   if (stateRead(DEVICE_BOARD, STATE_FLAG) & FLAG_RUN) {
     delay(TICKRATE);
-    ticks20ms += 1;
     if (++ticks100ms >= 5) {
       ticks100ms = 0;
     }
@@ -44,9 +43,10 @@ void loop(){
     }
     if (++ticks10s >= 500) {
       ticks10s = 0;
-      ticks20ms = 0; // don't need to count higher than 10 seconds
     }
-    for (int block = 0; block < MAX_DEVICES; block++) {
+    for (int block = 1; block < MAX_DEVICES; block++) {
+      if (stateRead(block, STATE_ACTION) == DEVICE_END) break; // marks end of live devices
+      if (stateRead(block, STATE_ACTION) >= DEVICE_UPPER) continue; // suspended or deleted devices
       bool updated = false;
       byte ttr = stateRead(block, STATE_TTR);
       if (ttr == 0) continue; // no action needed

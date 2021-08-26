@@ -6,30 +6,33 @@
 
 /*
   Memory is laid out as a series of 10 byte "permanent" data in EEPROM, along with
-  corresponding 4 byte blocks of volatile data. The precise meaning of most of the
+  corresponding 6 byte blocks of volatile data. The precise meaning of most of the
   data bytes is device dependant, as described below.
 */
 
 // some useful macros
 #define EEPROM_BLOCK_SIZE 10          // space set aside for device information
+#define STATE_BLOCK_SIZE 6
 #define EEPROM_ADDRESS(a,b) (((a) * EEPROM_BLOCK_SIZE) + (b))
 #define eepromRead(a,b) EEPROM.read(EEPROM_ADDRESS(a,b))
 #define eepromWrite(a,b,c) EEPROM.write(EEPROM_ADDRESS(a,b),(c))
 
-#define STATE_BLOCK_SIZE 4
 #define STATE_ADDRESS(a,b) (((a) * STATE_BLOCK_SIZE) + (b))
 #define stateRead(a,b) (deviceStates[STATE_ADDRESS(a,b)])
 #define stateWrite(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] = (c))
 #define stateBitSet(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] |= (c))
 #define stateBitClear(a,b,c) (deviceStates[STATE_ADDRESS(a,b)] &= (~(c)))
 #define statePtr(a,b) (&deviceStates[STATE_ADDRESS(a,b)])
+#define stateFromEEPROM(a,b,c) (stateWrite((a),(b),eepromRead((a),(c))))
+#define stateCopy(a,b,c) (stateWrite((a),(b),eepromRead((a),(c))))
 
 //////////////////////// Block 0 //////////////////////////////////////////
 
-// byte 0 is not used, (too easy to overwrite)
-#define ADDRESS_UNIT_ID 1                // unique ID for each board, used for I2C comms
-#define ADDRESS_UNIT_TAG 2           // Tag - Type of board
-#define ADDRESS_FLAG 6
+#define EEPROM_UNIT_ID 4                // unique ID for each board, used for I2C comms
+#define EEPROM_FLAG 5
+#define EEPROM_TAG 0
+#define STATE_FLAG 5
+#define BAD_PIN 255
 // 7 to 9 UNUSED
 
 // tag values for UNITTYPE
@@ -37,28 +40,28 @@
 #define TAG_NANO "NANO"          // Little brother, with more pins
 #define TAG_MEGA "MEGA"          // Biggest one, lots of pins
 
-/////////////////////// Layout of remaining blocks /////////////////////////
+/////////////////////// Layout of Block 0 (the board) /////////////////////////
 
-/* Layout of eeprom block 0 - device block
+#define DEVICE_BOARD 0 // location of board info, block 0
+
+/* Layout of eeprom block 0 - board block
 
 +--------+---------------------+----------------------------+--------------------------+
 | Address| Content             | Notes                      | Defined                  |
 +--------+---------------------+----------------------------+--------------------------+
-| 0000   | Not used            | (too easy to overwrite)    |                          |
-+--------+---------------------+----------------------------+--------------------------+
-| 0001   | Board  ID           | used as the I2C address    | ADDRESS_UNIT_ID          |
-+--------+---------------------+----------------------------+--------------------------+
-| 0002   | Board type          | one of:                    | ADDRESS_UNIT_TAG         |
+| 0000   | Board type          | one of:                    | ADDRESS_UNIT_TAG         |
 +--------+                     | UNO3, NANO, MEGA           |                          |
+| 0001   |                     |                            |                          |
++--------+                     |                            |                          |
+| 0002   |                     |                            |                          |
++--------+                     |                            |                          |
 | 0003   |                     |                            |                          |
-+--------+                     |                            |                          |
-| 0004   |                     |                            |                          |
-+--------+                     |                            |                          |
-| 0005   |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
-| 0006   | Default flag value  | See config.h for mapping   | ADDRESS_FLAG             |
+| 0004   | Board  ID           | used as the I2C address    | ADDRESS_UNIT_ID          |
 +--------+---------------------+----------------------------+--------------------------+
-| 0007   | Unused              |                            |                          |
+| 0005   | Default flag value  | See config.h for mapping   | ADDRESS_FLAG             |
++--------+---------------------+----------------------------+--------------------------+
+| 0006   | Unused              |                            |                          |
 | to     |                     |                            |                          |
 | 0009   |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
@@ -68,189 +71,412 @@
 +--------+---------------------+----------------------------+--------------------------+
 | Byte   | Content             | Notes                      | Defined                  |        
 +--------+---------------------+----------------------------+--------------------------+
-|   0    | Flag 1              | See config.h               | STATE_FLAG               |
+|   0    |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
 |   1    |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
-|   2    |                     |                            |                          |
+|   2    | Block of 1st SR     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
-|   3    |                     |                            |                          |
+|   3    | Block of DHT11      |                            |  STATE_DHT_BLOCK         |
++--------+---------------------+----------------------------+--------------------------+
+|   4    | Block of RTC        |                            |  STATE_RTC_BLOCK         |            
++--------+---------------------+----------------------------+--------------------------+
+|   5    |Current flag value   |                            | STATE_FLAG               |
 +--------+---------------------+----------------------------+--------------------------+
 
 */
 
-#define DEVICE_BOARD 0 // location of board info, block 0
+#define ADDRESS_UNIT_TAG 0
+#define ADDRESS_UNIT_ID 4
 
-// Device definitions
-#define OFFSET_TYPE 0           // offsets for fixed information
-#define OFFSET_NEXT_DEVICE 1      // If in a sequence
-#define OFFSET_TTR 9      // If in a sequence
-#define OFFSET_TAG 2            // bytes 2-5 are the 4 character tag
-// bytes 6 to 9 are device dependent, but there are some common ones
-#define OFFSET_ACTION 6         // default action
-#define OFFSET_PIN1 7            // Use WEP to populate this
-#define OFFSET_PIN2 8            // Use WEP to populate this
-#define OFFSET_PIN3 9             // Use WEP to populate this
-// OFFSET 10 is the coktinuation byte
-#define OFFSET_PIN4 11            // Use WEP to populate this
-#define OFFSET_PIN5 12            // Use WEP to populate this
-#define OFFSET_PIN6 13            // Use WEP to populate this
+#define OFFSET_BLOCK_TYPE 0
+#define STATE_DHT_BLOCK 3 
+#define STATE_RTC_BLOCK 4 
+#define STATE_1ST_SR 2
 
-// Values for the device type field
-// - special values first
+/* 
+  Special values for offset 0:
+  - If a device is present at this block, OFFSET_BLOCK_TYPE will contain a printable character
+  - Otherwise it could be one of these special values
+*/
+
 #define DEVICE_END 255          // Marks the end of the list of devices (default, unwritten EEPROM)
 #define DEVICE_CONT 254         // This device needs a further 10 bytes of data
 #define DEVICE_DELETED 253      // Marks a deleted device, ignore this
+#define DEVICE_SUSPENDED 252
 #define DEVICE_UPPER 250        // Everything above this can be ignored
 
-// Default Actions
-// generic
-#define DEVICE_OFF 255     // EEPROM default (unwritten) value
-#define DEVICE_ON 1
-
-// Pin types
-// generic
-#define NOTUSED 255     // the default (unwritten) value from the EEPROM
-#define BAD_PIN 255
-
-#define STATE_FLAG 0
-
-////////////////////////////////// LED Devices ///////////////////////////
-/* Layout of generic (also plain LED & PWM LED) block
-
-+--------+---------------------+----------------------------+--------------------------+
-| Offset | Content             | Notes                      | Defined as               |
-+--------+---------------------+----------------------------+--------------------------+
-| 0      | Device type         |                            | OFFSET_TYPE              |
-+--------+---------------------+----------------------------+--------------------------+
-| 1      | (next device)       | if part of a chain         | OFFSET_NEXT_DEVICE       |
-+--------+---------------------+----------------------------+--------------------------+
-| 2      | Device tag          |                            | OFFSET_TAG               |
-+--------+                     |                            |                          |
-| 3      |                     |                            |                          |
-+--------+                     |                            |                          |
-| 4      |                     |                            |                          |
-+--------+                     |                            |                          |
-| 5      |                     |                            |                          |
-+--------+---------------------+----------------------------+--------------------------+
-| 6      | Default action      |                            | OFFSET_ACTION            |
-+--------+---------------------+----------------------------+--------------------------+
-| 7      | Device pin (*)      | Populate with WEP          | OFFSET_PIN1              |
-+--------+---------------------+----------------------------+--------------------------+
-| 8      | SR device block     | if pin > 100               | OFFSET_SR_BLOCK          |
-+--------+---------------------+----------------------------+--------------------------+
-| 9      | (default TTR)       | for sme actions            | OFFSET_TTR               |
-+--------+---------------------+----------------------------+--------------------------+
-(*) Special values (virtual pins) are as follows:
-101 - 132: pins 0 to 32 of shift register in block given in byte 8
-And there are separate multiplexors for plain and PWM LED  
-  
-  Layout of state block for LEDs
-
-+--------+---------------------+----------------------------+--------------------------+
-| Byte   | Content             | Notes                      | Defined                  |        
-+--------+---------------------+----------------------------+--------------------------+
-|   0    | Current value       |                            | STATE_VALUE              |
-+--------+---------------------+----------------------------+--------------------------+
-|   1    |                     |                            |                          |
-+--------+---------------------+----------------------------+--------------------------+
-|   2    | Current action      | (see below)                | STATE_ACTION             |
-+--------+---------------------+----------------------------+--------------------------+
-|   3    | Time to run         | next state change (or 0)   | STATE_TTR                |
-+--------+---------------------+----------------------------+--------------------------+
-
-Also note that an RGB LED is treated as 3 separate PWM LEDs, one for each pin / colour
-
+/*
+ Definitions of units for TTR (top 2 bits)
 */
 
-#define STATE_VALUE 0
-#define STATE_TTR   3
-#define STATE_ACTION 2
 #define TTR_UNIT_20ms 0    // ends up as 0b00000000    (0)
 #define TTR_UNIT_100ms 1   // ends up as 0b01000000   (64)
 #define TTR_UNIT_1s 2      // ends up as 0b10000000  (128)
 #define TTR_UNIT_10s 3     // ends up as 0b11000000  (192)
 
-// -- normal LEDs
-#define DEVICE_OUTPUT 0            // generic output device
-#define DEVICE_LED 1            // generic LED
-#define DEVICE_PWM_LED 2         // LED on a PWM output
 
-// LED Action values
-#define ACTION_NONE 255
-#define ACTION_RUN 1
-// values 2,3 not used
-#define ACTION_FLASH 4     // Flash as per TTR given
-#define OFFSET_FLASH_TTR OFFSET_TTR // different format - see below
-// 2 x 4 bit values (on/off), representing N x 3 x 100ms, so 300ms to 4.5 seconds
-#define ACTION_FLICKER 5
-#define OFFSET_FLICKER_MAXMIN 1 // see below
-// 2 x 4 bit values, representing percentage of 255
-// TTR is update rate
-#define ACTION_PULSE 6
-#define ACTION_FADE_IN 7
-#define ACTION_FADE_OUT 8
-#define OFFSET_DELTA 1 // step action
-#define STATE_PULSE_UP 2 // true if going upwards
-// TTR is update rate
+/* Layout of eeprom generic block
 
-// values 7-9 not used
-#define ACTION_RANDOM 10
-#define OFFSET_RANDOM_TTR OFFSET_TTR // different format - see below
-// 2 x 4 bit values, duty cycle (x 10%) / max length (10s + x 10 seconds)
-
-
-// values 23 -33 not used
-#define ACTION_SEQ_HEAD 34 // sequence 0.5s
-#define ACTION_SEQ 35 // sequence 0.5s
-
-
-// values 19 to 23 not used
-
-////////////////////////////////// Shift Registers ///////////////////////////
-///// NOTE: Shift registers should be defined BEFORE the devices that use them
-//////////////////////////////////////////////////////////////////////////////
-/* Layout of shift register block
 +--------+---------------------+----------------------------+--------------------------+
-| Offset | Content             | Notes                      | Defined as               |
+| Address| Content             | Notes                      | Defined                  |
 +--------+---------------------+----------------------------+--------------------------+
-| 0      | Device type         | DEVICE_DIGITAL_SR          | OFFSET_TYPE              |
-+--------+---------------------+----------------------------+--------------------------+
-| 1      | (next device)       | if part of a chain         | OFFSET_NEXT_DEVICE       |
-+--------+---------------------+----------------------------+--------------------------+
-| 2      | Device tag          |                            | OFFSET_TAG               |
+| 0000   | tag (or marker)     | Printable characters only  | OFFSET_TAG               |
 +--------+                     |                            |                          |
-| 3      |                     |                            |                          |
+| 0001   |                     |                            |                          |
 +--------+                     |                            |                          |
-| 4      |                     |                            |                          |
+| 0002   |                     |                            |                          |
 +--------+                     |                            |                          |
-| 5      |                     |                            |                          |
+| 0003   |                     |                            |                          |
 +--------+---------------------+----------------------------+--------------------------+
-| 6      | No. of devices      | (Up to 4 supported)        | OFFSET_SR_NUM            |
+| 0004   | Pin 1 / Param 0     |                            | OFFSET_PIN1              |
+|        |                     |                            | OFFSET_PARAM0            |
 +--------+---------------------+----------------------------+--------------------------+
-| 7      | Data input pin      | Populate with WEP          | OFFSET_SR_DATA_PIN       |
+| 0005   | Pin 2 / Param 1     |                            | OFFSET_PIN2              |
+|        |                     |                            | OFFSET_PARAM1            |
 +--------+---------------------+----------------------------+--------------------------+
-| 8      | Clock Pin           | Populate with WEP          | OFFSET_SR_CLOCK_PIN      |
+| 0006   | Pin 3 / Param 2     |                            | OFFSET_PIN3              |
+|        |                     |                            | OFFSET_PARAM2            |
 +--------+---------------------+----------------------------+--------------------------+
-| 9      | Latch Pin           | Populate with WEP          | OFFSET_SR_LATCH_PIN      |
+| 0007   | Pin 4 / Param 3     |                            | OFFSET_PIN4              |
+|        |                     |                            | OFFSET_PARAM3            |
+|        | Value               |                            | OFFSET_VALUE             |
++--------+---------------------+----------------------------+--------------------------+
+| 0008   | Action              |                            |                          |
++--------+---------------------+----------------------------+--------------------------+
+| 0009   | Default Runtime     | (Special format, below)    | OFFSET_RUNTIME           |
 +--------+---------------------+----------------------------+--------------------------+
 
-SR's don't have a default action, or TTR, each indvidual connection has
-  
-  Layout of state block for SR's
+  Layout of generic device block
 
 +--------+---------------------+----------------------------+--------------------------+
 | Byte   | Content             | Notes                      | Defined                  |        
 +--------+---------------------+----------------------------+--------------------------+
-|   0    | State of SR 1       |                            | STATE_SR1_MAP            |
+|   0    | Parameter 1         |                            | STATE_PARAM1             |
 +--------+---------------------+----------------------------+--------------------------+
-|   1    | State of SR 2       |                            | STATE_SR2_MAP            |
+|   1    | Parameter 2         |                            | STATE_PARAM2             |
 +--------+---------------------+----------------------------+--------------------------+
-|   2    | State of SR 3       |                            | STATE_SR3_MAP            |
+|   2    | Parameter 3         |                            | STATE_PARAM3             |
+|        | Target TTR          |                            | STATE_RUNTIME            |
 +--------+---------------------+----------------------------+--------------------------+
-|   3    | State of SR 4       |                            | STATE_SR4_MAP            |
+|   3    | Current action      |                            | STATE_ACTION             |
 +--------+---------------------+----------------------------+--------------------------+
+|   4    | Current TTR         | Auto-decremented           | STATE_TTR                |
++--------+---------------------+----------------------------+--------------------------+
+|   5    |Current value        |                            | STATE_VALUE              |
++--------+---------------------+----------------------------+--------------------------+
+
 */
+
+// Offsets or pins
+#define EEPROM_PIN1 4            // Use WEP to populate this
+#define EEPROM_PIN2 5            // Use WEP to populate this
+#define EEPROM_PIN3 6             // Use WEP to populate this
+#define EEPROM_PIN4 7             // Use WEP to populate this
+
+// Offsets for parameters
+#define EEPROM_PARAM1 4
+#define EEPROM_PARAM2 5
+#define EEPROM_PARAM3 6
+#define EEPROM_PARAM4 7
+#define EEPROM_VALUE 7
+
+// Offsets for action / ttr
+#define EEPROM_ACTION 8         // default action
+#define EEPROM_RUNTIME 9      // If in a sequence
+#define STATE_TTR 4
+#define STATE_RUNTIME 2
+#define STATE_ACTION 3
+#define STATE_VALUE 5
+// Or they could just be parameters
+#define STATE_PARAM1 0
+#define STATE_PARAM2 1
+#define STATE_PARAM3 2
+
+// Action Definitions
+// generic
+#define ACTION_NONE 255     // EEPROM default (unwritten) value
+
+// Pin types
+// generic
+#define PIN_NOTUSED 255     // the default (unwritten) value from the EEPROM
+
+#define ACTION_DIGITAL_OUTPUT 0     // e.g. LED, initial value given in EEPROM_VALUE
+                              // value remains fixed unless remote controlled
+
+ /*
+
+   ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+ 
+  //////////////// Initial actions ///////////////////////
+
+  STATE_VALUE is set to 0, Pin 1 set LOW / HIGH
+
+*/
+
+////////////////////////////////// Actions Output Devices ///////////////////////////
+
+ 
+#define ACTION_PWM_OUTPUT 2   // PWM device, initial value is in EEPROM_VALUE
+                              // value remains fixed unless remote controlled
+ 
+ /*
+
+   ///////////// Parameter value meanings ////////////////
+
+  OFFSET_PIN1 - the digital pin in question
+  OFFSET_VALUE - 0 - 255 PWM level
+ 
+  //////////////// Initial actions ///////////////////////
+
+  STATE_VALUE is set to OFFSET_VALUE, PIN1 set to value
+
+  ////////////////////// Notes //////////////////////////
+
+  Also note that an RGB LED is treated as 3 separate PWM LEDs, one for each pin / colour
+
+*/
+
+#define ACTION_FLASH_LED 10
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - Runtime for HIGH
+   OFFSET_PARAM2 - Runtime for LOW
+ 
+  //////////////// Initial actions ///////////////////////
+
+  STATE_VALUE is set to 1, PIN1 set to 1
+  STATE_TTR set to OFFSET_PARAM1
+
+  ////////////////// Action on Timeout //////////////////
+
+  If value is 1, set value 0, PIN1 set to 0, TTR is PARAM2
+  If value is 0, set value 1, PIN1 set to 1, TTR is PARAM1
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+
+// value 4 not used
+#define ACTION_PULSE_UP 11
+#define ACTION_PULSE_DOWN 12
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - High value
+   OFFSET_PARAM2 - Low value
+   OFFSET_RUNTIME - rise / fall time (so period is twice this)
+ 
+  //////////////// Initial actions ///////////////////////
+
+  STATE_VALUE is set to Low value, PIN1 set to low value
+  STATE_TTR set to Param 2
+  Params 1 & 2 copied from EEPROM to state
+  Action is modified to show direction
+
+  ////////////////// Action on Timeout //////////////////
+
+  Value is incremented / decremented by (high - low) / runtime steps
+  on limits, reverse direction.
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+
+#define ACTION_FADE_PWM 7
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - Start value
+   OFFSET_PARAM2 - End value
+   OFFSET_RUNTIME - rise / fall time
+ 
+  //////////////// Initial actions ///////////////////////
+
+  STATE_VALUE is set to Low value, PIN1 set to low value
+  STATE_TTR set to Param 2
+  Params 1 & 2 copied from EEPROM to state
+
+  ////////////////// Action on Timeout //////////////////
+
+  Value is incremented / decremented by (high - low) / runtime steps
+  on limit, set STATE_TTR to 0
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+#define ACTION_FLICKER_PWM 8
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - High value
+   OFFSET_PARAM2 - Low value
+   OFFSET_RUNTIME - update rate
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+
+#define ACTION_SEQ_HEAD 20
+#define ACTION_SEQ 21
+
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - Block number of the next device
+   OFFSET_RUNTIME - Time to stay on this device
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+
+#define ACTION_SEQ_PWM_HEAD 11
+#define ACTION_SEQ_PWM 12
+
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - Block number of the next device
+   OFFSET_PARAM2 - PWM level for this device
+   OFFSET_RUNTIME - Time to stay on this device
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+
+
+#define ACTION_RANDOM 13
+
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - the digital pin in question
+   OFFSET_PARAM1 - Block number of the next device
+   OFFSET_PARAM2 - PWM level for this device
+   OFFSET_RUNTIME - Time to stay on this device
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// Notes //////////////////////////
+
+*/
+
+#define ACTION_SHIFT_REG 30
+
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - Data input pin
+   OFFSET_PIN2 - Clock pin
+   OFFSET_PIN3 - Latch pin
+   OFFSET_VALUE - Number of shift registers in total
+   (RUNTIME not used)
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// State Block usage //////////////////////////
+
+  STATE_PARAM1 current value of SR1
+  STATE_PARAM2 current value of SR2
+  STATE_PARAM3 current value of SR3
+  (STATE_VALUE could be used if there are 4 SR's)
+
+*/
+
+
+#define ACTION_RTC_VIRTUAL 40
+#define ACTION_RTC_I2C 41
+
+ /*
+
+  ///////////// Parameter value meanings ////////////////
+
+   OFFSET_PIN1 - Data input pin
+   OFFSET_PIN2 - Clock pin
+   OFFSET_PIN3 - Latch pin
+   OFFSET_VALUE - Number of shift registers in total
+   (RUNTIME not used)
+ 
+  //////////////// Initial actions ///////////////////////
+
+
+  ////////////////// Action on Timeout //////////////////
+
+
+  ////////////////////// State Block usage //////////////////////////
+
+  STATE_PARAM1 current value of Hours
+  STATE_PARAM2 current value of Minutes
+  STATE_PARAM3 current value of Seconds
+  (STATE_VALUE could be used if there are 4 SR's)
+
+*/
+
+////////////////////////////////// Shift Registers ///////////////////////////
+///// NOTE: Shift registers should be defined BEFORE the devices that use them
+//////////////////////////////////////////////////////////////////////////////
+
+#define ACTION_DHT11 42
+
+// values 19 to 23 not used
+
 
 #define DEVICE_DIGITAL_SR  24       // digital output shift register
 #define DEVICE_PWM_SR  25       // pwm output shift register
@@ -258,12 +484,6 @@ SR's don't have a default action, or TTR, each indvidual connection has
 #define OFFSET_SR_DATA_PIN      OFFSET_PIN1
 #define OFFSET_SR_CLOCK_PIN     OFFSET_PIN2
 #define OFFSET_SR_LATCH_PIN     OFFSET_PIN3
-#define OFFSET_SR_BLOCK 8
-#define OFFSET_SR_NUM 6
-#define STATE_SR1_MAP 0
-#define STATE_SR2_MAP 1
-#define STATE_SR3_MAP 2
-#define STATE_SR4_MAP 3
 
 // values 27-31 not used
 // -- Motors (to be done)
@@ -403,8 +623,8 @@ SR's don't have a default action, or TTR, each indvidual connection has
 
 ////////////////////////////////// INPUT Devices ///////////////////////////
 
-#define DEVICE_INPUT 100        // Generic input device (read digital value from pin)
-#define DEVICE_ANALOG 101        // Generic input device (read analog value from pin)
+#define ACTION_DIGITAL_INPUT 100        // Generic input device (read digital value from pin)
+#define ACTION_ANALOG_INPUT 101        // Generic input device (read analog value from pin)
 #define DEVICE_DHT11  110      // Temperature and humidity sensor - uses default layout
 
 /* Layout of generic input block
@@ -496,8 +716,6 @@ And there are separate multiplexors for plain and PWM LEDs
 #define STATE_RTC_HOURS 0
 #define STATE_RTC_MINS 1
 #define STATE_RTC_SECS 2
-
-#define ACTION_RTC_VIRTUAL 110
 
 /* Layout of DHT11 EEPROM block
 

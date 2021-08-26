@@ -3,7 +3,8 @@
 
 unsigned int findDevice(const char *tag);
 void setupDevices();
+unsigned int setupDevice(unsigned int block, unsigned int deviceAction);
 void getDevice(unsigned int addr);
-void allDevices(int state);
+void setDevice(unsigned int addr, unsigned int value);
 
 #endif // !DEVICES_H

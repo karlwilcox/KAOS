@@ -7,6 +7,7 @@ void sampleInputs(unsigned int action);
 void updateLCD();
 void writeDSR(unsigned int block);
 byte doAction(unsigned int block);
-void updateValue(unsigned int block, byte value);
+void updateDigital(unsigned int block, byte value);
+void updatePWM(unsigned int block, byte value);
 
 #endif // !ACTIONS_H
