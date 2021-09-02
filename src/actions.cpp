@@ -180,13 +180,19 @@ The rest is still unwritten * ";
 
 
 void updateLCD() { // we are called every 1/4 second, 
-/*    static int count = 0;
+    static int count = 0;
     static unsigned int curPos = 0;
     char temp[10];
+    unsigned int tmpt = 0, hour = 0, mins = 0, hmdt = 0, block;
+                        
+    if ((block = stateRead(DEVICE_BOARD, STATE_DHT_BLOCK) != 0 ) && block != 255) {
+        tmpt = stateRead(block,STATE_PARAM1);
+        hmdt = stateRead(block,STATE_PARAM2);
+    }
 
     if (count == 12) {
         // After 3 seconds display centigrade
-        sprintf(temp, "%4d", (int)temperature);
+        sprintf(temp, "%4d", (int)tmpt);
         lcdLine0[0] = temp[0];
         lcdLine0[1] = temp[1];
         lcdLine0[2] = temp[2];
@@ -195,19 +201,23 @@ void updateLCD() { // we are called every 1/4 second,
         // after another 3 seconds display fahrenheit
         // update the clock and humidity
     } else if (count == 24) {
-        sprintf(temp, "%4d", (((int)temperature * 9) / 5) + 32);
+        if ((block = stateRead(DEVICE_BOARD, STATE_RTC_BLOCK) != 0 ) && block != 255) {
+            hour = stateRead(block,STATE_PARAM1);
+            mins = stateRead(block, STATE_PARAM2);
+        }
+        sprintf(temp, "%4d", (((int)tmpt * 9) / 5) + 32);
         lcdLine0[0] = temp[0];
         lcdLine0[1] = temp[1];
         lcdLine0[2] = temp[2];
         lcdLine0[3] = temp[3];
         lcdLine0[4] = 'F';  
-        sprintf(temp, "%02u", hours);
+        sprintf(temp, "%02u", hour);
         lcdLine0[6] = temp[0];
         lcdLine0[7] = temp[1];
-        sprintf(temp, "%02u", minutes);
+        sprintf(temp, "%02u", mins);
         lcdLine0[9] = temp[0];
         lcdLine0[10] = temp[1];
-        sprintf(temp, "%3d", (int)humidity);
+        sprintf(temp, "%3d", (int)hmdt);
         lcdLine0[12] = temp[0];
         lcdLine0[13] = temp[1];
         lcdLine0[14] = temp[2];
@@ -224,22 +234,26 @@ void updateLCD() { // we are called every 1/4 second,
     lcd->setCursor(0,0);
     lcd->print(lcdLine0);
     lcd->setCursor(0,1);
-    lcd->print(lcdLine1); */
+    lcd->print(lcdLine1); 
 }
 
 // A timer has expired, so do the required action and return a new time value
-byte doAction(unsigned int block) {
-    unsigned int t1; // temporary store
+void doAction(unsigned int block) {
+    unsigned int t1, t2; // temporary store
     byte b; // temporary store
-    // default new value is just 0, no further action
-    byte retval = 0;
     // Almost always need the current value, so get it
     byte value = stateRead(block, STATE_VALUE);
 
+    // special handling for block 0
+    if (block == 0) { // time has expired on system board, resume command processing
+        stateBitClear(block, STATE_FLAG, FLAG_SLEEP);
+        stateWrite(block, STATE_TTR, 0);
+        return;
+    }
+
     // What action do we need to do?
-    switch(stateRead(block, STATE_ACTION)) {
-        case ACTION_UPDATE_LCD:
-            break;
+    unsigned int action = stateRead(block, STATE_ACTION);
+    switch(action) {
         case ACTION_RTC_VIRTUAL:
             if (++stateRead(block,STATE_PARAM3) >= 60) {
                 stateWrite(block,STATE_PARAM3,0);
@@ -250,40 +264,28 @@ byte doAction(unsigned int block) {
                     }
                 }
             } 
-            retval = stateRead(block, STATE_RUNTIME);
+            stateWrite(block, STATE_TTR, 1 | TTR_UNIT_1s);
             break;
-    /*    case ACTION_CTRL_SET_ACTION:
-            b = eepromRead(block,OFFSET_CTRL_DEVICE);
-            if (stateRead(block,STATE_VALUE) == LOW) { // target device is off
-                stateWrite(b, STATE_ACTION, eepromRead(b,OFFSET_ACTION));
-                stateWrite(b, STATE_TTR, eepromRead(b,OFFSET_TTR));
-                stateWrite(block,STATE_VALUE,HIGH);
-            } else {
-                stateWrite(b,STATE_ACTION,0); // turn off target device
-                stateWrite(block,STATE_VALUE,LOW);
-            }
-            retval = (random(eepromRead(block,OFFSET_CTRL_MIN_TIME),
-                                        eepromRead(block,OFFSET_CTRL_MAX_TIME)) | (TTR_UNIT_10s << 6));
-            break; */
         case ACTION_FLASH_LED: 
             if (value >= 1) { // device is currently ON
                 // turn device off
                 value = LOW;
-                // return off TTR
-                retval = stateRead(block, STATE_PARAM2);
+                // set off TTR
+                stateWrite(block, STATE_TTR, stateRead(block, STATE_PARAM2));
             } else { // device is currently OFF
                 // turn device ON
                 value = HIGH;
                 // return on TTR
-                retval = stateRead(block, STATE_PARAM1);
+                stateWrite(block, STATE_TTR, stateRead(block, STATE_PARAM1));
             }
             updateDigital(block, value);
             break;
-/*        case ACTION_FLICKER:
-            b = eepromRead(block, OFFSET_FLICKER_MAXMIN);
-            t1 = 255 * (((b >> 4) * 10 ) / 100); // max value
-            t2 = 255 * (((b & 0b00001111) * 10) / 100); // min value;
-            // safety checks
+        case ACTION_FLICKER:
+            // Get a new random value
+            t1 = stateRead(block,STATE_PARAM1) & 0b11110000; // high value
+            t2 = (stateRead(block,STATE_PARAM1) & 0b00001111) << 4; // low value
+            // t3 = (t1 - t2) / 4; // range
+                        // safety checks
             if (t1 == t2 || abs(t2 - t1) < 50) { // nonsense values
                 t2 = 0; t1 = 255;
             } else if (t2 > t1) { // wrong way around
@@ -293,84 +295,72 @@ byte doAction(unsigned int block) {
                 b = (byte)random(t2,t1);
                 // don't allow jumps bigger than half
             } while (abs(stateRead(block, STATE_VALUE) - b) > (abs(t2 - t1)/ 2));
-            updateValue(block,b);
-            retval = random(10,50) | (stateRead(block, STATE_TTR) & 0b11000000);
-            break; */
-        case ACTION_PULSE_UP:
-            // calculate step
-            t1 = (stateRead(block, STATE_PARAM1) - stateRead(block, STATE_PARAM2)) / stateRead(block,STATE_RUNTIME);
-            // check for limit (careful not to overflow)
-            if ((unsigned int)(stateRead(block, STATE_PARAM1) - stateRead(block, STATE_VALUE)) > t1) { // state change
-                b = stateRead(block, STATE_PARAM1); // set high value
-                stateWrite(block, STATE_ACTION, ACTION_PULSE_DOWN); // go down;
-            } else {
-                b = stateRead(block, STATE_VALUE) + t1;
-            }
-            updateDigital(block,b);
-            retval = stateRead(block, STATE_RUNTIME);
-            break;               
-        case ACTION_PULSE_DOWN:
-            // calculate step
-            t1 = (stateRead(block, STATE_PARAM1) - stateRead(block, STATE_PARAM2)) / stateRead(block,STATE_RUNTIME);
-            // check for limit (careful of underflow)
-            if (stateRead(block, STATE_VALUE) < t1) { // state change
-                b = stateRead(block, STATE_PARAM2); // set low value
-                stateWrite(block, STATE_ACTION, ACTION_PULSE_UP); // go up;
-            } else {
-                b = stateRead(block, STATE_VALUE) - t1;
-            }
-            updateDigital(block,b);
-            retval = stateRead(block, STATE_RUNTIME);
-            break;     
- /*       case ACTION_FADE_IN:
-            retval = stateRead(block, STATE_TTR);
-            t1 = stateRead(block, STATE_VALUE);
-            b = eepromRead(block, OFFSET_DELTA);
-            if (b == 0) b = 1; // slow rise
-            t1 += b;
-            if (t1 > 255) {
-                t1 = 255;
-                stateWrite(block, STATE_ACTION, DEVICE_ON);
-                retval = 0;
-            }
-            updateValue(block,(byte)t1);
-            break;    
-         case ACTION_FADE_OUT:
-            retval = stateRead(block, STATE_TTR);
-            t1 = stateRead(block, STATE_VALUE);
-            b = eepromRead(block, OFFSET_DELTA);
-            if (b == 0) b = 1; // slow fade
-            if (t1 < b) {
-                t1 = 0;
-                stateWrite(block, STATE_ACTION, DEVICE_OFF);
-                retval = 0;
-            } else {
-                t1 -= b;
-            }
-            updateValue(block,(byte)t1);
+            updatePWM(block, b);
+            // get a new random TTR
+            t1 = (stateRead(block, STATE_PARAM2) & 0b11000000); // units
+            t2 = (stateRead(block, STATE_PARAM2) & 0b00111111); // value
+            if (t2 == 0) t2 = 1;
+            if (t2 > 1) t2 = random(1,t2);
+            t2 |= t1; // put the units back
+            stateWrite(block, STATE_TTR, t2);
             break;
-        case ACTION_RANDOM:
-            b = eepromRead(block, OFFSET_RANDOM_TTR);
-            t1 = ((b >> 4) * 10) % 100; // duty cycle
-            t2 = (b & 0b00001111) * 10; // max length, in seconds
-            if (value >= 1) { // on
-                value = 0;
-                retval = random(1,(t1 / 100 * t2)) | (TTR_UNIT_1s << 6);
-            } else { // off
-                value = 1;
-                retval = random(1,(100 - t1)/100 * t2) | (TTR_UNIT_1s << 6);
+        case ACTION_FADE_ONCE:
+            t1 = stateRead(block,STATE_PARAM1) & 0b11110000; // start value
+            t2 = (stateRead(block,STATE_PARAM1) & 0b00001111) << 4; // end value
+            if (t2 > t1) { // going up
+                if ((t2 - value) < stateRead(block, STATE_PARAM2)) { // reached end value
+                    value = t2; // so set end value
+                    stateWrite(block, STATE_TTR, 0); // and stop
+                } else {
+                    value += stateRead(block, STATE_PARAM2);
+                    stateWrite(block, STATE_TTR, stateRead(block, STATE_RUNTIME));
+                }
+            } else { // going down
+                if ((value - t2) < stateRead(block, STATE_PARAM2)) { // reached end value
+                    value = t2; // so set end value
+                    stateWrite(block, STATE_TTR, 0); // and stop
+                } else {
+                    value -= stateRead(block, STATE_PARAM2);
+                    stateWrite(block, STATE_TTR, stateRead(block, STATE_RUNTIME));
+                }
             }
-            updateValue(block, value);
-            break; */
+            updatePWM(block, value);
+            break;
+        case ACTION_FADE_CYCLE:
+            t1 = stateRead(block,STATE_PARAM1) & 0b11110000; // start value
+            t2 = (stateRead(block,STATE_PARAM1) & 0b00001111) << 4; // end value
+            if (t2 > t1) { // going up
+                if ((t2 - value) < stateRead(block, STATE_PARAM2)) { // reached end value
+                    value = t2; // so set end value
+                    stateWrite(block, STATE_PARAM1, (t1 >> 4) | t2); // swap start & end
+                } else {
+                   value += stateRead(block, STATE_PARAM2);
+                }
+            } else { // going down
+                if ((value - t2) < stateRead(block, STATE_PARAM2)) { // reached end value
+                    value = t2; // so set end value
+                    stateWrite(block, STATE_PARAM1, (t1 >> 4) | t2); // swap start & end
+                } else {
+                    value -= stateRead(block, STATE_PARAM2);
+                }
+            }
+            stateWrite(block, STATE_TTR, stateRead(block, STATE_RUNTIME));
+            updatePWM(block, value);
+            break;
         case ACTION_DHT11:
             dht11->read(eepromRead(block,EEPROM_PIN1), statePtr(block, STATE_PARAM1),
                         statePtr(block, STATE_PARAM2), NULL);
+            stateWrite(block, STATE_TTR, 1 | TTR_UNIT_10s);
+            break;
+        case ACTION_UPDATE_LCD:
+            updateLCD();
+            stateWrite(block, STATE_TTR, 12 | TTR_UNIT_20ms); // 240ms (about 1/4 second)
             break;
         case ACTION_SEQ:
         case ACTION_SEQ_HEAD:
             // timer has expired, so move on to next in sequence
-            b = eepromRead(block,STATE_PARAM1);
-            if (b > 0) { // zero marks ends of chain, so just stop
+            b = stateRead(block,STATE_PARAM1);
+            if (b > 0 && (stateRead(b, STATE_ACTION) == ACTION_SEQ || stateRead(b, STATE_ACTION) == ACTION_SEQ_HEAD)) { // zero marks ends of chain, so just stop
                 // otherwise turn on new device
                 updateDigital(b, (byte)HIGH);
                 // and set its new timer value
@@ -379,10 +369,24 @@ byte doAction(unsigned int block) {
             // turn off current device
             updateDigital(block, (byte)LOW);
             // timer for this device is zero
-            // which is the default return value
+            stateWrite(block, STATE_TTR, 0);
             break;
+        case ACTION_SEQ_PWM:
+        case ACTION_SEQ_PWM_HEAD:
+            // timer has expired, so move on to next in sequence
+            b = stateRead(block,STATE_PARAM1);
+            if (b > 0 && (stateRead(b, STATE_ACTION) == ACTION_SEQ_PWM || stateRead(b, STATE_ACTION) == ACTION_SEQ_PWM_HEAD)) { // zero marks ends of chain, so just stop
+                // otherwise turn on new device
+                updatePWM(b, stateRead(block, STATE_PARAM2));
+                // and set its new timer value
+                stateWrite(b, STATE_TTR, eepromRead(b, STATE_RUNTIME));
+            }
+            // turn off current device
+            updatePWM(block, (byte)LOW);
+            // timer for this device is zero
+            stateWrite(block, STATE_TTR, 0);
+            break;        
         default:
             break;
     }
-    return retval;
 }

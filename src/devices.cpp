@@ -8,7 +8,6 @@
 #include "devices.h"
 #include "actions.h"
 
-extern char monitorBuffer[];
 extern char com[], arg[], val[];
 extern byte deviceStates[];
 extern char f_03d[];
@@ -18,56 +17,60 @@ extern char lcdLine0[], lcdLine1[];
 const char line0Default[] PROGMEM = "**.*C hh:mm ***%";
 const char line1Default[] PROGMEM = "Hello World...  ";
 
-unsigned int setupDevice(unsigned int block, unsigned int deviceAction) {
-    byte value = HIGH;
-    unsigned int ttr = 0;
-    switch (deviceAction) {
+void setupDevice(unsigned int block) {
+    unsigned int action = stateRead(block, STATE_ACTION);
+    switch (action) {
         case ACTION_DIGITAL_INPUT:
         case ACTION_ANALOG_INPUT:
             pinMode(eepromRead(block,EEPROM_PIN1),INPUT);
+            stateWrite(block, STATE_TTR, 0);
             break;
         case ACTION_DIGITAL_OUTPUT:
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
-            updateDigital(block,eepromRead(block,EEPROM_VALUE));
+            updateDigital(block,stateRead(block,STATE_VALUE));
+            stateWrite(block, STATE_TTR, 0);
             break;
         case ACTION_PWM_OUTPUT:
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
-            updatePWM(block,eepromRead(block,EEPROM_VALUE));
+            updatePWM(block,stateRead(block,STATE_VALUE));
+            stateWrite(block, STATE_TTR, 0);
             break;
         case ACTION_FLASH_LED: 
-            stateFromEEPROM(block,STATE_PARAM1, EEPROM_PARAM1); // High time to run
-            stateFromEEPROM(block,STATE_PARAM2, EEPROM_PARAM2); // Low time to run
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
-            // stateCopy(block, STATE_TTR, STATE_PARAM1);
-            ttr = eepromRead(block, STATE_PARAM1);
+            stateWrite(block, STATE_TTR, stateRead(block, STATE_PARAM1)); // on flash time
             updateDigital(block,HIGH);
             break;
-        case ACTION_PULSE_UP:
-        case ACTION_PULSE_DOWN:
+        case ACTION_FLICKER:
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
-            stateFromEEPROM(block,STATE_RUNTIME,EEPROM_RUNTIME); // update time
-            stateFromEEPROM(block,STATE_PARAM1,EEPROM_PARAM1); // high value
-            stateFromEEPROM(block,STATE_PARAM2,EEPROM_PARAM2); // low value
-            if (deviceAction == ACTION_PULSE_UP) {
-                updatePWM(block,stateRead(block, STATE_PARAM2));
-            } else {
-                updatePWM(block,stateRead(block, STATE_PARAM1));
-            }
-            // stateCopy(block, STATE_TTR, STATE_RUNTIME);
-            ttr = eepromRead(block, STATE_RUNTIME);
+            // start in the middle of the range
+            stateWrite(block, STATE_PARAM3, 126); // start by going up
+            updatePWM(block, (((stateRead(block,STATE_PARAM1) & 0b11110000) - ((stateRead(block,STATE_PARAM1) & 0b00001111) << 4)) / 2));            stateWrite(block, STATE_TTR, 1 | TTR_UNIT_20ms); // start as soon as possible
             break;
-        case ACTION_SEQ_HEAD:
-            stateFromEEPROM(block,STATE_RUNTIME,EEPROM_RUNTIME); // update time
-            stateFromEEPROM(block,STATE_PARAM1,EEPROM_PARAM1); // Next device in sequence
+        case ACTION_FADE_ONCE:
+        case ACTION_FADE_TWICE:
+        case ACTION_FADE_CYCLE:
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
-            // stateCopy(block, STATE_TTR, STATE_RUNTIME);
-            ttr = eepromRead(block, STATE_RUNTIME);
+            updatePWM(block,stateRead(block, STATE_PARAM1) & 0b11110000); // set start value
+            stateWrite(block, STATE_TTR, STATE_RUNTIME);
+            break;
+        case ACTION_SEQ_PWM_HEAD:
+            pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
+            stateWrite(block, STATE_TTR, stateRead(block, STATE_RUNTIME)); // on flash time
+            updatePWM(block,stateRead(block,STATE_PARAM2));
+            break;
+        case ACTION_SEQ_PWM:
+            pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
+            stateWrite(block, STATE_TTR, 0);
+            updatePWM(block,LOW);
+            break;        
+        case ACTION_SEQ_HEAD:
+            pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
+            stateWrite(block, STATE_TTR, stateRead(block, STATE_RUNTIME)); // on flash time
             updateDigital(block,HIGH);
             break;
         case ACTION_SEQ:
-            stateFromEEPROM(block,STATE_RUNTIME,EEPROM_RUNTIME); // update time
-            stateFromEEPROM(block,STATE_PARAM1,EEPROM_PARAM1); // Next device in sequence
             pinMode(eepromRead(block,EEPROM_PIN1), OUTPUT);
+            stateWrite(block, STATE_TTR, 0);
             updateDigital(block,LOW);
             break;
         case ACTION_SHIFT_REG:
@@ -79,65 +82,46 @@ unsigned int setupDevice(unsigned int block, unsigned int deviceAction) {
             stateWrite(block,STATE_PARAM3,0);
             writeDSR(block);
             stateWrite(DEVICE_BOARD, STATE_1ST_SR, block);  // TODO Support multiple SRs
+            stateWrite(block, STATE_TTR, 0);
             break;
         case ACTION_RTC_VIRTUAL: // only virtual for now
             stateWrite(DEVICE_BOARD, STATE_RTC_BLOCK,block);
             stateWrite(block,STATE_PARAM1,18); // Hours
             stateWrite(block,STATE_PARAM2,0); // Minutes
             stateWrite(block,STATE_PARAM3,0); // Seconds
-            stateWrite(block, STATE_RUNTIME, 1 << TTR_UNIT_1s);
-            // stateWrite(block, STATE_TTR, 1 << TTR_UNIT_1s);
-            ttr = 1 << TTR_UNIT_1s;
+            stateWrite(block, STATE_TTR, 1 | TTR_UNIT_1s); // update 10th/sec
             break;
         case ACTION_DHT11:
             dht11 = new SimpleDHT11();
             stateWrite(DEVICE_BOARD, STATE_DHT_BLOCK,block);
             stateWrite(block,STATE_PARAM1,20); // Temperature
             stateWrite(block,STATE_PARAM2,0); // Humidity
-            // stateWrite(block, STATE_TTR, 10 << TTR_UNIT_1s);
-            ttr = 10 << TTR_UNIT_10s;
+            stateWrite(block, STATE_TTR, 1 | TTR_UNIT_10s); // update 10th/sec
+            break; 
+        case ACTION_UPDATE_LCD:
+            lcd = new LiquidCrystal(
+                eepromRead(block, EEPROM_PIN1),
+                eepromRead(block, EEPROM_PIN2),
+                eepromRead(block, EEPROM_PIN3),
+                eepromRead(block, EEPROM_PIN4),
+                eepromRead(block + 1, EEPROM_PIN1),
+                eepromRead(block + 1, EEPROM_PIN2)
+            );
+            strcpy_P(lcdLine0,line0Default);
+            strcpy_P(lcdLine1,line1Default);
+            stateWrite(block, STATE_TTR, 12 | TTR_UNIT_20ms); 
             break;
-            
+  /*      case ACTION_CTRL_OFF:
+        case ACTION_CTRL_ON:
+        case ACTION_CTRL_RND:
+            stateWrite(block, STATE_TTR, ((eepromRead(block,EEPROM_VALUE) & 0b11110000) >> 4) | TTR_UNIT_10s); */
+
 
 
 
 
 /*
 
-            // Flow Through 
-        case DEVICE_OUTPUT:
-        case DEVICE_LED:        // generic output or led are treated the same
-            pinMode(eepromRead(block,OFFSET_PIN1),OUTPUT);
-            deviceAction = EEPROM.read((block * EEPROM_BLOCK_SIZE) + OFFSET_ACTION);
-            switch (deviceAction) {
-                // simple cases
-                case DEVICE_ON: 
-                    case DEVICE_OFF: 
-                        updateValue(block,deviceAction == DEVICE_ON? onValue : 0);
-                        deviceTTR = 0;
-                        break;
-                    // these all are off to start with, no timer
-                    case ACTION_SEQ:
-                        updateValue(block,  0);
-                        deviceTTR = 0;
-                        break;
-                    // switch sequence heads on, and set their timers
-                    case ACTION_SEQ_HEAD:
-                        updateValue(block,  onValue);
-                        deviceTTR = eepromRead(block, OFFSET_TTR);
-                        break;
-                    case ACTION_FADE_OUT:
-                        updateValue(block, 255);
-                        break;
-                    // other actions we can just leave to run as soon as possible
-                    default:
-                        break;
-                }
-                break;
-            case DEVICE_INPUT:
-                deviceAction = EEPROM.read((block * EEPROM_BLOCK_SIZE) + OFFSET_ACTION);
-                pinMode(eepromRead(block,OFFSET_PIN1),INPUT);
-                break;
 
             case DEVICE_LCD:
                 lcd = new LiquidCrystal(EEPROM_ADDRESS(block,OFFSET_LCDRS),
@@ -154,39 +138,25 @@ unsigned int setupDevice(unsigned int block, unsigned int deviceAction) {
                 strcpy_P(lcdLine1, line1Default);
                 deviceAction = EEPROM.read((block * EEPROM_BLOCK_SIZE) + OFFSET_ACTION);
                 break;
-
-            case DEVICE_RTC:
-                if (eepromRead(block, OFFSET_ACTION) == ACTION_RTC_VIRTUAL) {
-                    deviceTTR = 1 | (TTR_UNIT_1s << 6);
-                    stateWrite(block, STATE_RTC_HOURS, 18);
-                    stateWrite(block, STATE_RTC_MINS, 0);
-                    stateWrite(block, STATE_RTC_SECS, 0);
-                } // fake a real time clock by counting seconds
-                break;
-            case DEVICE_CONTROLLER:
-                stateWrite(block,STATE_VALUE, LOW);
-                stateWrite(block, STATE_TTR, (random(eepromRead(block,OFFSET_CTRL_MIN_TIME),
-                                            eepromRead(block,OFFSET_CTRL_MAX_TIME)) | (TTR_UNIT_10s << 6)));
-                break; */
+ */
             default:
                 break;
 
         }
-        return ttr;
-
 }
 
 void setupDevices() {
     unsigned int block = 1;   // skip past device 0, that is the board itself
     unsigned int deviceType;
-    while ((deviceType = eepromRead(block, EEPROM_ACTION)) != DEVICE_END) {
-        if (deviceType == DEVICE_CONT || deviceType == DEVICE_DELETED) {      // extra data, should already have been used
-            continue;                                                        // or deleted device, but more to come
+    for (block = 1; block < MAX_DEVICES; block++) {
+        deviceType = eepromRead(block, EEPROM_ACTION);
+        for( unsigned int i = 0; i < STATE_BLOCK_SIZE; i++) {
+            stateFromEEPROM(block,i,i+4); // copy everything into the state block
         }
-        stateWrite(block, STATE_TTR, setupDevice(block, eepromRead(block, EEPROM_ACTION)));
-        stateCopy(block, STATE_ACTION, EEPROM_ACTION);
-        block += 1;
+        if (deviceType == DEVICE_END) break;
+        setupDevice(block);
     }
+
 }
 
 unsigned int findDevice(const char *tag) { // return number of device block
@@ -207,45 +177,81 @@ unsigned int findDevice(const char *tag) { // return number of device block
 
 
 
-void getDevice(unsigned int block) {
-    switch(eepromRead(block,STATE_ACTION)) {
+bool getDevice(unsigned int block) {
+    switch(stateRead(block,STATE_ACTION)) {
         case ACTION_DIGITAL_INPUT: // generic digital input
-            sprintf(monitorBuffer, f_03d, digitalRead(eepromRead(block,EEPROM_PIN1)));
+            sprintf(val, f_03d, digitalRead(eepromRead(block,EEPROM_PIN1)));
             break;
         case ACTION_ANALOG_INPUT: // generic analog input
-            sprintf(monitorBuffer, f_03d, analogRead(eepromRead(block,EEPROM_PIN2)));
+            sprintf(val, f_03d, analogRead(eepromRead(block,EEPROM_PIN2)));
             break;
         case ACTION_SHIFT_REG:
-            sprintf(monitorBuffer, "%03u %03u %03u", stateRead(block, STATE_PARAM1),
+        case ACTION_RTC_VIRTUAL:
+            sprintf(val, "%03u %03u %03u", stateRead(block, STATE_PARAM1),
                             stateRead(block, STATE_PARAM2),
                             stateRead(block, STATE_PARAM3));
             break;
+        case ACTION_DHT11:
+            sprintf(val, "%03u %03u", stateRead(block, STATE_PARAM1),
+                            stateRead(block, STATE_PARAM2));
+            break;
+        case ACTION_SEQ_HEAD:
+        case ACTION_SEQ:
+        case ACTION_SEQ_PWM_HEAD:
+        case ACTION_SEQ_PWM:
         case ACTION_DIGITAL_OUTPUT:
         case ACTION_PWM_OUTPUT:
         case ACTION_FLASH_LED:
-        case ACTION_PULSE_UP:
-        case ACTION_PULSE_DOWN:
-            sprintf(monitorBuffer, f_03d, stateRead(block,STATE_VALUE));
+        case ACTION_FADE_CYCLE:
+        case ACTION_FADE_ONCE:
+        case ACTION_FADE_TWICE:
+            sprintf(val, f_03d, stateRead(block,STATE_VALUE));
             break;
         default:
+            return false;
             break;
     }
+    return true;
 }
 
 
 
 void setDevice(unsigned int block, unsigned int value) {
+    char *ptr;
     switch(stateRead(block,STATE_ACTION)) {
         case ACTION_SHIFT_REG:
+            stateWrite(block,STATE_PARAM1,(byte)value);
+            ptr = val;
+            while (*ptr != '\0' && *ptr != '/') ptr++;
+            if (*ptr == '/') {
+                ptr++;
+                stateWrite(block, STATE_PARAM2, char2int(ptr));
+            }
+            while (*ptr != '\0' && *ptr != '/') ptr++;
+            if (*ptr == '/') {
+                ptr++;
+                stateWrite(block, STATE_PARAM3, char2int(ptr));
+            }
+            writeDSR(block);
             break;
         case ACTION_DIGITAL_OUTPUT:
         case ACTION_FLASH_LED:
-        case ACTION_PULSE_UP:
-        case ACTION_PULSE_DOWN:
+        case ACTION_SEQ_HEAD:
+        case ACTION_SEQ:
             updateDigital(block, (byte)value);
             break;
+        case ACTION_SEQ_PWM_HEAD:
+        case ACTION_SEQ_PWM:
+        case ACTION_FADE_CYCLE:
+        case ACTION_FADE_ONCE:
+        case ACTION_FADE_TWICE:
         case ACTION_PWM_OUTPUT:
             updatePWM(block, (byte)value);
+            break;
+        case ACTION_WAIT: // pause for a given time
+            stateBitSet(DEVICE_BOARD, STATE_FLAG, FLAG_SLEEP);
+            stateWrite(block, STATE_TTR, value);
+            break;
         default:
             break;
     }

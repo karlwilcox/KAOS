@@ -5,13 +5,11 @@
  * Definitions for monitor program
  */
 
-// Required global variables:
-// char monitorBuffer[32];
-// int monitorFlags = 0;
 
 void monitorRun(); // Carry out monitor action
 bool monitorInput(); // check for monitor input
 void monitorOutput(); // Send response
+unsigned int char2int(char *in);
 
 //////////////////// IMPORTANT //////////////////////////
 // When creating new devices, set the device type LAST //
@@ -20,8 +18,9 @@ void monitorOutput(); // Send response
 // for single byte changes)                            //
 /////////////////////////////////////////////////////////
 
-#define MONITOR_DEBUG true
-#define MONITOR_BUFFER_SIZE 24
+#define MONITOR_VALUE_SIZE 24
+#define MONITOR_COMMAND_SIZE 4
+#define MONITOR_ARGUMENT_SIZE 5
 
 
 #endif
