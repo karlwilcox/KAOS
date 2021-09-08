@@ -150,18 +150,17 @@ void monitorRun() {
                 // starting at ddd (default 0) and including vvv devices (default 8)
     CMD_WDP,    // WRITE DEVICE PIN write a pin value to a device block: WDP ddd ppp
     CMD_ACT,    // SET ACTION set device to a specific action:  ACT tttt vvv
-                // same as writing the STATE_ACTION value but also runs setupDevice()
+                // same as writing the STATE_SIGGEN value but also runs setupDevice()
     CMD_WES,    // WRITE EEPROM STREAM write a sequence of bytes to EEPROM, one per line
                 // starting at aaaa, end with a space line: WES aaa
     CMD_WSS,    // WRITE STATE STREAM write a sequence of bytes to state, one per line
                 // starting offset aaaa, end with space line: WSSS aaa
-    CMD_STO,    // SAVE copy state into EEPROM : SAV tttt
     CMD_SLP,    // WAI vvv suspend command input processing for time vvv
     CMD_WCS,    // WRITE CHARACTER STREAM write a sequence of bytes to eeprom, including \r
                 // starting offset aaaa, end with space line: WSSS aaa
     CMD_RUN,    // RUN aaaa Execute commands from EEPROM starting at aaaa
     };
-    const static char commands[] PROGMEM = "BADWDBRDBRSTTAGSETGETDMPWDPACTWESWSSSTOSLPWCSRUN";
+    const static char commands[] PROGMEM = "BADWDBRDBRSTTAGSETGETDMPWDPACTWESWSSSLPWCSRUN";
     enum tags { // Note these are effectively RESERVED tag names and should NOT be used
                 // for LEDs or other devices. Values are read/write unless shown otherwise
     TAG_NONE,   // No built in value
@@ -222,7 +221,7 @@ void monitorRun() {
             }
     }
     // Some commands might then use a built-in tag
-    if (cmdVal == CMD_GET || cmdVal == CMD_SET || cmdVal == CMD_STO) {
+    if (cmdVal == CMD_GET || cmdVal == CMD_SET ) {
         padTag();
         for (unsigned int i = 0; i < strlen_P(taglist); i++) {
             if (strncasecmp_P(arg,&taglist[i*4], 4) == 0) {
@@ -350,16 +349,16 @@ void monitorRun() {
                             sprintf(val,f_03d,stateRead(t1,STATE_PARAM2));
                         break;
                     case TAG_TAGS:
-                        for (t1 = 1; t1 < MAX_DEVICES; t1++) {
-                            t2 = eepromRead(t1,EEPROM_ACTION);
-                            if (t2 == DEVICE_END) break;
-                            if (t2 == DEVICE_CONT || t2 == DEVICE_DELETED) continue;
+                        for (t1 = 1; t1 < MAX_BLOCKS; t1++) {
+                            t2 = eepromRead(t1,EEPROM_BLOCK_TYPE);
+                            if (t2 == BLOCK_END_MARKER) break;
+                            if (t2 == BLOCK_CONT || t2 == BLOCK_DELETED) continue;
                             sprintf(val,"%c%c%c%c %03u", 
                                 eepromRead(t1,EEPROM_TAG),
                                 eepromRead(t1,EEPROM_TAG+1),
                                 eepromRead(t1,EEPROM_TAG+2),
                                 eepromRead(t1,EEPROM_TAG+3),
-                                eepromRead(t1,EEPROM_ACTION));
+                                eepromRead(t1,EEPROM_BLOCK_TYPE));
                             Serial.println(val);
                         }
                         val[0] = '\0';
@@ -376,18 +375,6 @@ void monitorRun() {
                 }
             }
             break;
-        case CMD_STO:
-            if ((block = findDevice(arg)) == 0) {
-                    strcpy_P(val,badTag);
-            } else { // should be one of our defined names
-                eepromWrite(block, EEPROM_PARAM1, stateRead(block, STATE_PARAM1));
-                eepromWrite(block, EEPROM_PARAM2, stateRead(block, STATE_PARAM2));
-                eepromWrite(block, EEPROM_PARAM3, stateRead(block, STATE_PARAM3));
-                eepromWrite(block, EEPROM_ACTION, stateRead(block, STATE_ACTION));
-                eepromWrite(block, EEPROM_VALUE, stateRead(block,EEPROM_VALUE));
-                val[0] = '\0';
-            }
-            break;
         case CMD_RST:
             reset();
             break;
@@ -396,7 +383,7 @@ void monitorRun() {
                 strcpy_P(val,badTag);
             } else { // should be one of our defined names
                 t1 = char2int(val);
-                stateWrite(block, STATE_ACTION, t1);
+                stateWrite(block, STATE_SIGGEN, t1);
                 setupDevice(block);
                 val[0] = '\0';
             }
@@ -451,7 +438,7 @@ void monitorRun() {
             break;
         case CMD_TAG:
             t1 = char2int(arg);
-            if (t1 >= MAX_DEVICES) {
+            if (t1 >= MAX_BLOCKS) {
                 strcpy_P(val, badAddr);
                 break;
             }
@@ -487,7 +474,7 @@ void monitorRun() {
                 Serial.println(F("                     A   B   C   D   E   F"));
             }
             // print content lines
-            for (unsigned int j = t1; (j < (unsigned int)(t1 + t2)) && ((unsigned int)(t1 + t2) < MAX_DEVICES); j++) {
+            for (unsigned int j = t1; (j < (unsigned int)(t1 + t2)) && ((unsigned int)(t1 + t2) < MAX_BLOCKS); j++) {
                 // print starting address
                 sprintf(temp,"%03u ", (j*EEPROM_BLOCK_SIZE)/10);
                 Serial.print(temp);

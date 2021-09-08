@@ -382,23 +382,10 @@ Layout of state block
                                    // param1 is operator to apply to signal value (see below)
                                   // param2 is operand, RUNTIME is TTR,
                                   // (all can be remote modified)
-																	
-#define ACTION_COMBINE 51 // combine two values with boolean logic / arithmetic
-													// param0 is the operation, p1 & p2 the inputs, ttr used
-#define LOGICAL_AND 0
-#define LOGICAL_OR  1
-#define LOGICAL_XOR 2
-#define LOGICAL_IF 3      // value is 2nd if 1st is 1 or more, 0 otherwise
-#define LOGICAL_IF_NOT 4  // value is 2nd if 1st is 0, 0 otherwise
-#define ARITHMETIC_PLUS 10
-#define ARITHMETIC_MINUS 11
-#define ARITHMETIC_MAX 12
-#define ARITHMETIC_MIN 13
-
-
 
 
 ////////////////////////////////// INPUT Devices ///////////////////////////
+
 #define ACTION_DIGITAL_INPUT 100        // Generic input device (read digital value from pin) uese TTR
                                         // param 1 is input process, as below, param2 is debounce time
 #define INPUT_RAW 0                     // just put the reading into value

@@ -6,5 +6,7 @@
 #define UNO3 0
 
 #define BUTTON_PIN A0
-#define MAX_DEVICES 32
+#define MAX_BLOCKS 32
+
+#define TICKRATE 20
 #endif

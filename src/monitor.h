@@ -14,7 +14,7 @@ unsigned int char2int(char *in);
 //////////////////// IMPORTANT //////////////////////////
 // When creating new devices, set the device type LAST //
 // When modifying existing devices, set the device     //
-// to DEVICE_DELETED, make changes, then reset (except //
+// to BLOCK_DELETED, make changes, then reset (except //
 // for single byte changes)                            //
 /////////////////////////////////////////////////////////
 
